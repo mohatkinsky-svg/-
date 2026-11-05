@@ -1,0 +1,140 @@
+<!DOCTYPE html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>WatchCam</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font:16px system-ui;background:#0e0e10;color:#eee}
+button{background:#22c55e;color:#000;border:0;border-radius:10px;padding:12px;font-size:15px;margin:3px 0;width:100%}
+button.g{background:#3a3a40;color:#eee}
+input,select{width:100%;padding:10px;border-radius:8px;border:0;margin:3px 0;background:#26262b;color:#eee;font-size:15px}
+.c{background:#1c1c20;border-radius:10px;padding:10px;margin:8px 0}.p{padding:14px}small{color:#999}
+.row{display:flex;gap:6px;align-items:center}.row>*{flex:1}
+img.big,video.big{width:100%;border-radius:10px;background:#000;display:block;min-height:120px}
+#cam{position:fixed;inset:0;background:#000}#cv{width:100%;height:100%;object-fit:cover}
+#ov{position:absolute;left:0;right:0;top:0;padding:10px;background:linear-gradient(#000c,#0000);font-size:14px}
+#bar{position:absolute;left:0;right:0;bottom:0;padding:8px;background:#000c}
+#cl{position:fixed;inset:0;background:#0e0e10;overflow:auto;padding:14px;z-index:5}
+#dim{position:fixed;inset:0;background:#000;display:none;z-index:9;color:#222;align-items:center;justify-content:center}
+</style></head><body>
+<div id="home" class="p"><h2>WatchCam</h2>
+<div class="c">Код связи (одинаковый на обоих телефонах, как пароль)<input id="code" autocapitalize="off" autocomplete="off">
+<small>Сервер (ntfy)</small><input id="srv" autocapitalize="off">
+<small>Кадр «я на связи» каждые, мин (0 — выкл)</small><select id="ev"><option>0<option>2<option>5<option>10<option>30</select>
+<button class="g" onclick="test()">🔎 Проверить связь</button><div id="tr"></div></div>
+<button onclick="go('cam')">📷 Этот телефон — КАМЕРА</button><button onclick="go('view')">👁 Этот телефон — ПРОСМОТР</button></div>
+
+<div id="cam" hidden><video id="cv" playsinline muted autoplay></video>
+<div id="ov"><b id="s1">…</b><br><small id="s2"></small></div>
+<div id="bar"><div class="row"><small style="flex:0 0 110px">Чувствит.</small><input id="sens" type="range" min="1" max="10"></div>
+<div class="row"><button class="g" onclick="dim.style.display='flex'">🌙 Экран</button><button class="g" onclick="flip()">🔄 Камера</button><button class="g" onclick="clips()">🎞 Записи</button><button class="g" onclick="home()">⚙</button></div></div>
+<div id="cl" hidden></div></div>
+
+<div id="view" class="p" hidden><div class="row"><b id="vs">…</b><button class="g" style="flex:0 0 52px" onclick="home()">⚙</button></div>
+<img id="lf" class="big" alt=""><div id="lt" class="c"></div>
+<div class="row"><button onclick="snapReq()">🔄 Свежий кадр</button><button id="lb" onclick="liveToggle()">▶ Живой</button></div>
+<div id="clip"></div><h3>События</h3><div id="evl"></div></div>
+<div id="dim" onclick="dim.style.display='none'">нажмите, чтобы включить экран</div>
+<script>
+const $=id=>document.getElementById(id),L=localStorage,sleep=ms=>new Promise(r=>setTimeout(r,ms)),dim=$('dim');
+const rnd=()=>Array.from(crypto.getRandomValues(new Uint8Array(12)),x=>'abcdefghjkmnpqrstuvwxyz23456789'[x%31]).join('');
+const cfg={code:L.code||(L.code=rnd()),srv:L.srv||'https://ntfy.sh',sens:+L.sens||5,every:L.every==null?5:+L.every};
+$('code').value=cfg.code;$('srv').value=cfg.srv;$('ev').value=cfg.every;$('sens').value=cfg.sens;
+$('code').onchange=e=>cfg.code=L.code=e.target.value.trim().toLowerCase();
+$('srv').onchange=e=>cfg.srv=L.srv=e.target.value.trim().replace(/\/+$/,'');
+$('ev').onchange=e=>cfg.every=L.every=+e.target.value;
+$('sens').oninput=e=>cfg.sens=L.sens=+e.target.value;
+const T=()=>cfg.srv+'/'+cfg.code,TS=()=>T()+'-s',jh=o=>JSON.stringify(o);
+async function put(u,b,h,ms=25000){const r=await fetch(u,{method:'PUT',body:b,headers:h,signal:AbortSignal.timeout(ms)});if(!r.ok)throw 'HTTP '+r.status}
+async function post(u,o){const r=await fetch(u,{method:'POST',body:jh(o),signal:AbortSignal.timeout(15000)});if(!r.ok)throw 'HTTP '+r.status}
+async function test(){const o=$('tr');o.textContent='Проверка…';const t=Date.now();
+ try{const r=await fetch(cfg.srv+'/v1/health',{signal:AbortSignal.timeout(10000)});if(!r.ok)throw 'HTTP '+r.status;
+  await post(TS(),{k:'test'});o.textContent='✅ Сервер доступен, отправка работает ('+(Date.now()-t)+' мс)'}
+ catch(e){o.textContent='❌ Нет связи с сервером ('+e+'). Попробуйте другую сеть или свой сервер ntfy.'}}
+function home(){L.role='';location.reload()}
+function go(r){L.role=r;$('home').hidden=1;r=='cam'?startCam():startView()}
+// SSE с контролем «тишины»: ntfy шлёт keepalive каждые 45 с; нет данных 75 с — переподключаемся
+function listen(topics,h,since,onnet){let last=since,ids=new Set(),es,wd;
+ const go=()=>{clearTimeout(wd);es&&es.close();es=new EventSource(cfg.srv+'/'+topics+'/sse?since='+last);
+  const bump=()=>{clearTimeout(wd);wd=setTimeout(go,75000)};
+  es.onopen=()=>{bump();onnet(1)};es.addEventListener('keepalive',bump);
+  es.onmessage=e=>{bump();let d;try{d=JSON.parse(e.data)}catch{return}
+   if(d.event!='message'||ids.has(d.id))return;ids.add(d.id);last=Math.max(last,d.time);h(d)};
+  es.onerror=()=>{es.close();clearTimeout(wd);wd=setTimeout(go,4000);onnet(0)}};
+ go();document.addEventListener('visibilitychange',()=>!document.hidden&&go())}
+// ---------- IndexedDB ----------
+const dbp=new Promise(r=>{const q=indexedDB.open('wc',1);q.onupgradeneeded=()=>q.result.createObjectStore('c',{keyPath:'t'});q.onsuccess=()=>r(q.result)});
+const idb=async(m,f)=>{const d=await dbp;return new Promise(r=>{const q=f(d.transaction('c',m).objectStore('c'));q.onsuccess=()=>r(q.result)})};
+// ---------- КАМЕРА ----------
+const vid=$('cv'),mx=document.createElement('canvas').getContext('2d',{willReadFrequently:true}),fc=document.createElement('canvas');
+mx.canvas.width=64;mx.canvas.height=48;
+let stream,rec,recT=0,lastMove=0,prev,hits=0,queue=[],lastAlert=0,liveUntil=0,liveOn=0,facing='environment',batt=null,net=0,note='',nclips=0;
+async function openCam(){try{stream&&stream.getTracks().forEach(t=>t.stop());
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:640},height:{ideal:480},frameRate:{ideal:10}},audio:false});
+  vid.srcObject=stream;await vid.play();prev=null;note=''}catch(e){note='Камера: '+(e.message||e)}
+ try{await navigator.wakeLock.request('screen')}catch{}}
+const flip=()=>{facing=facing=='environment'?'user':'environment';openCam()};
+const snap=()=>new Promise(r=>{const w=320,h=Math.round(w*(vid.videoHeight||3)/(vid.videoWidth||4));fc.width=w;fc.height=h;fc.getContext('2d').drawImage(vid,0,0,w,h);fc.toBlob(r,'image/jpeg',.55)});
+async function sendFrame(){if(!stream||!vid.videoWidth)return;try{await put(TS(),await snap(),{Filename:'f.jpg',Priority:'1','X-Message':jh({k:'frame',b:batt,e:cfg.every})});note='';return 1}
+ catch(e){note='Ошибка отправки: '+e;if(/429/.test(e))await sleep(5000)}}
+async function flush(){while(queue.length){const q=queue[0];
+ try{await put(T(),q.b,{Filename:'m.jpg',Title:'Motion',Tags:'movement','X-Message':'Motion '+new Date(q.t).toLocaleTimeString('en-GB')});queue.shift();note='Уведомление отправлено'}
+ catch(e){note='Уведомление не ушло: '+e;return}}}
+async function liveLoop(){liveOn=1;while(Date.now()<liveUntil){await sendFrame();await sleep(3000)}liveOn=0}
+async function sendClip(tms){const a=await idb('readonly',s=>s.getAll());let best;
+ a.forEach(c=>{if(Math.abs(c.t-tms)<180000&&(!best||Math.abs(c.t-tms)<Math.abs(best.t-tms)))best=c});
+ if(!best||best.b.size>14e6)return post(TS(),{k:'noclip'}).catch(()=>{});
+ note='Отправляю клип '+(best.b.size/1024|0)+' КБ…';try{await put(TS(),best.b,{Filename:'c.webm','X-Message':jh({k:'clipdata'}),Priority:'1'},180000);note=''}catch(e){note='Клип не ушёл: '+e}}
+function onCmd(d){if(Date.now()/1000-d.time>60)return;let m;try{m=JSON.parse(d.message)}catch{return}
+ if(m.k=='snap')sendFrame();if(m.k=='unwatch')liveUntil=0;if(m.k=='clip')sendClip(m.t);
+ if(m.k=='watch'){liveUntil=Date.now()+45000;liveOn||liveLoop()}}
+function startRec(){const m=['video/webm;codecs=vp8','video/webm','video/mp4'].find(t=>MediaRecorder.isTypeSupported(t)),ch=[],t0=Date.now();recT=t0;
+ const r=rec=new MediaRecorder(stream,{mimeType:m,videoBitsPerSecond:300000});r.ondataavailable=e=>e.data.size&&ch.push(e.data);
+ r.onstop=async()=>{await idb('readwrite',s=>s.put({t:t0,b:new Blob(ch,{type:m})}));prune()};r.start(2000)}
+async function prune(){const a=await idb('readonly',s=>s.getAll());a.sort((x,y)=>y.t-x.t);let sum=0;nclips=a.length;
+ for(const c of a){sum+=c.b.size;if(sum>300e6)await idb('readwrite',s=>s.delete(c.t))}}
+function tick(){if(!stream||!vid.videoWidth)return;const now=Date.now();
+ mx.drawImage(vid,0,0,64,48);const d=mx.getImageData(0,0,64,48).data,cur=new Float32Array(3072);
+ for(let i=0;i<3072;i++)cur[i]=d[i*4]*.3+d[i*4+1]*.59+d[i*4+2]*.11;
+ let n=0;if(prev)for(let i=0;i<3072;i++)if(Math.abs(cur[i]-prev[i])>25)n++;prev=cur;
+ hits=n>3072*(11-cfg.sens)*.004?hits+1:0;
+ if(hits>=2){lastMove=now;if(!rec)startRec();if(now-lastAlert>60000){lastAlert=now;snap().then(b=>{queue.push({b,t:now});queue=queue.slice(-20);flush()})}}
+ else if(rec&&(now-lastMove>7000||now-recT>60000)){rec.stop();rec=null}
+ $('s1').textContent=rec?'🔴 Запись':'🟢 Наблюдение';
+ $('s2').textContent='Связь: '+(net?'ок':'нет')+' · очередь: '+queue.length+(batt!=null?' · 🔋'+batt+'%':'')+' · записей: '+nclips+(liveOn?' · 👁 смотрят':'')+(note?' · '+note:'')}
+async function startCam(){$('cam').hidden=0;await openCam();prune();
+ listen(cfg.code+'-s',onCmd,Math.floor(Date.now()/1000),v=>net=v);
+ setInterval(tick,400);setInterval(flush,20000);addEventListener('online',flush);
+ setInterval(async()=>{try{batt=Math.round((await navigator.getBattery()).level*100)}catch{}},60000);
+ setTimeout(sendFrame,3000);setInterval(()=>cfg.every&&sendFrame(),Math.max(cfg.every,1)*60000);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&(!stream||stream.getVideoTracks()[0].readyState!='live'))openCam();else navigator.wakeLock&&navigator.wakeLock.request('screen').catch(()=>{})})}
+async function clips(){const el=$('cl');el.hidden=0;const a=await idb('readonly',s=>s.getAll());a.sort((x,y)=>y.t-x.t);
+ el.innerHTML='<button class="g" onclick="cl.hidden=1">✖ Закрыть</button>'+(a.length?'':'<p>Записей нет</p>');
+ a.forEach(c=>{const d=document.createElement('div');d.className='c';d.textContent=new Date(c.t).toLocaleString()+' · '+(c.b.size/1024|0)+' КБ';
+  const p=document.createElement('button');p.textContent='▶ Смотреть';p.onclick=()=>{const v=document.createElement('video');v.className='big';v.src=URL.createObjectURL(c.b);v.controls=1;v.play();p.replaceWith(v)};
+  const x=document.createElement('button');x.className='g';x.textContent='🗑 Удалить';x.onclick=async()=>{await idb('readwrite',s=>s.delete(c.t));clips()};d.append(p,x);el.append(d)})}
+// ---------- ПРОСМОТР ----------
+let V={t:0,ev:[]},wt=0,ft;try{V=Object.assign(V,JSON.parse(L.v||'{}'))}catch{}
+const save=()=>{try{L.v=jh(V)}catch{}};
+function render(){const age=V.t?Date.now()/1000-V.t:1e9,ok=age<(V.e||5)*60+90;
+ $('vs').textContent=(net?'':'🟠 нет связи · ')+(V.t?(ok||wt?'🟢 камера на связи':'🔴 камера давно молчит'):'⚪ ждём первый кадр');
+ $('lt').textContent=V.t?'Кадр от '+new Date(V.t*1000).toLocaleString()+(V.b!=null?' · 🔋'+V.b+'%':''):'Кадров ещё нет — нажмите «Свежий кадр»'}
+function evList(){const el=$('evl');el.innerHTML=V.ev.length?'':'<small>Пока тихо</small>';
+ V.ev.forEach(e=>{const d=document.createElement('div');d.className='c';d.append('Движение · '+new Date(e.t*1000).toLocaleString());
+  if(e.u){const i=document.createElement('img');i.className='big';i.loading='lazy';i.src=e.u;i.onerror=()=>i.remove();d.append(i)}
+  const b=document.createElement('button');b.className='g';b.textContent='🎞 Запросить клип';b.onclick=()=>{post(TS(),{k:'clip',t:e.t*1000}).catch(()=>{});$('clip').textContent='Клип запрошен, ждём…'};d.append(b);el.append(d)})}
+async function loadFrame(){const u=V.u;try{const b=new Blob([await(await fetch(u)).arrayBuffer()],{type:'image/jpeg'});
+ V.d=await new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});$('lf').src=V.d;save()}catch{$('lf').src=u}}
+function onMsg(d){const s=d.topic.endsWith('-s');
+ if(!s){if(V.ev.some(e=>e.id==d.id))return;V.ev.unshift({id:d.id,t:d.time,u:d.attachment&&d.attachment.url});V.ev.sort((a,b)=>b.t-a.t);V.ev=V.ev.slice(0,30);save();evList();
+  if(d.time>Date.now()/1000-120){try{navigator.vibrate(300)}catch{}try{new Notification('Движение')}catch{}}return}
+ let m;try{m=JSON.parse(d.message)}catch{return}
+ if(m.k=='frame'&&d.attachment&&d.time>V.t){V.t=d.time;V.u=d.attachment.url;V.b=m.b;V.e=m.e;clearTimeout(ft);ft=setTimeout(loadFrame,400);save();render()}
+ if(m.k=='clipdata'&&d.attachment){$('clip').innerHTML='<video class="big" controls autoplay playsinline></video>';$('clip').firstChild.src=d.attachment.url}
+ if(m.k=='noclip')$('clip').textContent='Клип не найден на камере (устарел или удалён)'}
+function snapReq(){post(TS(),{k:'snap'}).catch(()=>{});$('lt').textContent='Запрос отправлен…';setTimeout(render,30000)}
+function liveToggle(){if(wt){clearInterval(wt);wt=0;post(TS(),{k:'unwatch'}).catch(()=>{});$('lb').textContent='▶ Живой';return}
+ const w=()=>post(TS(),{k:'watch'}).catch(()=>{});w();wt=setInterval(w,20000);$('lb').textContent='⏹ Стоп';setTimeout(()=>wt&&liveToggle(),600000)}
+function startView(){$('view').hidden=0;try{Notification.requestPermission()}catch{}
+ if(V.d)$('lf').src=V.d;render();evList();setInterval(render,15000);
+ document.addEventListener('visibilitychange',()=>document.hidden&&wt&&liveToggle());
+ listen(cfg.code+','+cfg.code+'-s',onMsg,'12h',v=>{net=v;render()})}
+if(L.role)go(L.role);
+</script></body></html>
