@@ -19,7 +19,8 @@ img.big,video.big{width:100%;border-radius:10px;background:#000;display:block;mi
 <div class="c">Код связи (одинаковый на обоих телефонах, как пароль)<input id="code" autocapitalize="off" autocomplete="off">
 <small>Название этой камеры</small><input id="name">
 <small>Сервер (ntfy)</small><input id="srv" autocapitalize="off">
-<small>Кадр «я на связи» каждые, мин (0 — выкл)</small><select id="ev"><option>0<option>2<option>5<option>10<option>30</select>
+<small>Кадр «я на связи» каждые, мин (0 — выкл)</small><select id="ev"><option>0<option>15<option>30<option>60</select>
+<small>Лимит сообщений в сутки (бесплатный ntfy.sh — около 250, тогда кадры идут экономно, раз в ~6 с. На своём сервере поставьте 1000 и больше — тогда кадры идут с максимальной скоростью)</small><input id="lim" type="number">
 <button class="g" onclick="test()">🔎 Проверить связь</button><div id="tr"></div></div>
 <button onclick="go('cam')">📷 Этот телефон — КАМЕРА</button><button onclick="go('view')">👁 Этот телефон — ПРОСМОТР</button></div>
 
@@ -33,7 +34,7 @@ img.big,video.big{width:100%;border-radius:10px;background:#000;display:block;mi
 
 <div id="view" class="p" hidden><div class="row"><b id="vs">…</b><button class="g" style="flex:0 0 52px" onclick="home()">⚙</button></div>
 <div id="grid"></div><div id="lt" class="c"></div><div id="ls"></div>
-<div class="row"><button class="g" onclick="snapReq()">🔄 Обновить все</button><button id="lbf" onclick="liveToggle('f')">⚡ Кадры</button><button id="lbv" onclick="liveToggle('v')">🎧 Видео+звук</button></div>
+<div class="row"><button class="g" onclick="snapReq()">🔄 Обновить все</button><button id="lbv" onclick="setMode(mode=='v'?'f':'v')">🎧 Видео+звук</button></div>
 <div class="row"><button class="g" onclick="flipReq()">🔀 Камера</button><button class="g" onclick="tv=!tv;P({k:'torch',v:tv});ST('Фонарик: команда отправлена…')">🔦 Фонарик</button><button class="g" onclick="P({k:'siren',v:vsir=!vsir})">🚨 Сирена</button></div>
 <div class="row"><small style="flex:0 0 60px">Зум</small><input id="zm" type="range" min="1" max="4" step="0.5" value="1" onchange="P({k:'zoom',v:+this.value});ST('Зум: команда отправлена…')"></div>
 <button id="ptt" class="g">🎤 Удерживайте и говорите (голосовое на камеру)</button>
@@ -42,16 +43,22 @@ img.big,video.big{width:100%;border-radius:10px;background:#000;display:block;mi
 <script>
 const $=id=>document.getElementById(id),L=localStorage,sleep=ms=>new Promise(r=>setTimeout(r,ms)),dim=$('dim');
 const rnd=()=>Array.from(crypto.getRandomValues(new Uint8Array(12)),x=>'abcdefghjkmnpqrstuvwxyz23456789'[x%31]).join('');
-const cfg={code:L.code||(L.code=rnd()),srv:L.srv||'https://ntfy.sh',sens:+L.sens||5,every:L.every==null?5:+L.every,name:L.name||'Камера 1',asens:+L.asens||0,cid:L.cid||(L.cid=rnd().slice(0,5))};
+const cfg={code:L.code||(L.code=rnd()),srv:L.srv||'https://ntfy.sh',sens:+L.sens||5,every:(L.every==null||(+L.every>0&&+L.every<15))?30:+L.every,lim:+L.lim||230,name:L.name||'Камера 1',asens:+L.asens||0,cid:L.cid||(L.cid=rnd().slice(0,5))};
 $('code').value=cfg.code;$('srv').value=cfg.srv;$('ev').value=cfg.every;$('sens').value=cfg.sens;
 $('code').onchange=e=>cfg.code=L.code=e.target.value.trim().toLowerCase();
 $('srv').onchange=e=>cfg.srv=L.srv=e.target.value.trim().replace(/\/+$/,'');
+$('lim').value=cfg.lim;$('lim').onchange=e=>cfg.lim=L.lim=+e.target.value||230;
 $('ev').onchange=e=>cfg.every=L.every=+e.target.value;
 $('name').value=cfg.name;$('name').onchange=e=>cfg.name=L.name=e.target.value.trim()||'Камера';$('asens').value=cfg.asens;$('asens').oninput=e=>cfg.asens=L.asens=+e.target.value;$('asr').checked=L.asr=='1';$('asr').onchange=e=>L.asr=e.target.checked?'1':'0';
 $('sens').oninput=e=>cfg.sens=L.sens=+e.target.value;
 const T=()=>cfg.srv+'/'+cfg.code,TS=()=>T()+'-s',jh=o=>JSON.stringify(o).replace(/[\u0080-\uffff]/g,c=>'\\u'+c.charCodeAt(0).toString(16).padStart(4,'0'));
-async function put(u,b,h,ms=25000){const r=await fetch(u,{method:'PUT',body:b,headers:h,signal:AbortSignal.timeout(ms)});if(!r.ok)throw 'HTTP '+r.status}
-async function post(u,o){let e;for(let i=0;i<3;i++){try{const r=await fetch(u,{method:'POST',body:jh(o),signal:AbortSignal.timeout(15000)});if(r.ok)return;e='HTTP '+r.status}catch(x){e=x}await sleep(1000*(i+1))}throw e}
+let cool=0,coolN=0;const cl=()=>Math.max(0,Math.ceil((cool-Date.now())/1000));
+const day=()=>{const d=new Date().toDateString();if(L.bd!=d){L.bd=d;L.bn=0}},bud=()=>{day();L.bn=(+L.bn||0)+1},room=k=>{day();return(+L.bn||0)<cfg.lim-k};
+async function chk(r){if(r.ok){coolN=0;return}let t='';try{t=(await r.json()).error||''}catch{}
+ if(r.status==429){const ra=+r.headers.get('Retry-After')||0,q=/daily|quota|day/i.test(t);coolN++;cool=Date.now()+1000*(ra||(q?3600:Math.min(600,20*2**coolN)))}
+ throw 'HTTP '+r.status+(t?' — '+t:'')}
+async function put(u,b,h,ms=25000){if(cl())throw 'пауза: лимит сервера, '+cl()+' с';bud();await chk(await fetch(u,{method:'PUT',body:b,headers:h,signal:AbortSignal.timeout(ms)}))}
+async function post(u,o){let e;for(let i=0;i<3;i++){if(cl())throw 'пауза: лимит сервера, '+cl()+' с';bud();try{await chk(await fetch(u,{method:'POST',body:jh(o),signal:AbortSignal.timeout(15000)}));return}catch(x){e=x;if(/HTTP 4/.test(''+x))break}await sleep(1000*(i+1))}throw e}
 async function test(){const o=$('tr');o.textContent='Проверка…';const t=Date.now();
  try{const r=await fetch(cfg.srv+'/v1/health',{signal:AbortSignal.timeout(10000)});if(!r.ok)throw 'HTTP '+r.status;
   await post(TS(),{k:'test'});o.textContent='✅ Сервер доступен, отправка работает ('+(Date.now()-t)+' мс)'}
@@ -61,9 +68,9 @@ function go(r){L.role=r;$('home').hidden=1;r=='cam'?startCam():startView()}
 // SSE с контролем «тишины»: ntfy шлёт keepalive каждые 45 с; нет данных 75 с — переподключаемся
 function listen(topics,h,since,onnet){let last=since,ids=new Set(),es,wd,pt,fails=0,polling=0,back;
  const handle=d=>{if(d.event!='message'||ids.has(d.id))return;ids.add(d.id);last=Math.max(last,d.time);h(d)};
- const poll=async()=>{if(!polling)return;try{const r=await fetch(cfg.srv+'/'+topics+'/json?poll=1&since='+last,{signal:AbortSignal.timeout(15000)});if(!r.ok)throw 0;
+ const poll=async()=>{if(!polling)return;if(cl()){pt=setTimeout(poll,5000);return}try{const r=await fetch(cfg.srv+'/'+topics+'/json?poll=1&since='+last,{signal:AbortSignal.timeout(15000)});await chk(r);
    (await r.text()).split('\n').filter(Boolean).forEach(l=>{try{handle(JSON.parse(l))}catch{}});onnet(2)}catch{onnet(0)}
-  pt=setTimeout(poll,topics.includes(',')?6000:4000)};
+  pt=setTimeout(poll,topics.includes(',')?10000:8000)};
  const startPoll=()=>{if(polling)return;polling=1;es&&es.close();clearTimeout(wd);poll();clearTimeout(back);back=setTimeout(()=>{polling=0;clearTimeout(pt);fails=0;go()},120000)};
  const go=()=>{clearTimeout(wd);es&&es.close();if(polling)return;es=new EventSource(cfg.srv+'/'+topics+'/sse?since='+last);
   const bump=()=>{clearTimeout(wd);wd=setTimeout(()=>{fails++;fails>=3?startPoll():go()},75000)};
@@ -77,7 +84,7 @@ const idb=async(m,f)=>{const d=await dbp;return new Promise(r=>{const q=f(d.tran
 // ---------- КАМЕРА ----------
 const vid=$('cv'),mx=document.createElement('canvas').getContext('2d',{willReadFrequently:true}),fc=document.createElement('canvas');
 mx.canvas.width=64;mx.canvas.height=48;
-let liveM='f',micErr='',caps={},ac,an,adata,sirH=0,tcOn=0,lastSnd=0,snd=0,lastLow=0,chg=0,stream,rec,recT=0,lastMove=0,prev,hits=0,queue=[],lastAlert=0,liveUntil=0,liveOn=0,facing=L.facing||'environment',batt=null,net=0,note='',nclips=0;
+let temp=null,lastHot=0,selCid='',liveM='f',micErr='',caps={},ac,an,adata,sirH=0,tcOn=0,lastSnd=0,snd=0,lastLow=0,chg=0,stream,rec,recT=0,lastMove=0,prev,hits=0,queue=[],lastAlert=0,liveUntil=0,liveOn=0,facing=L.facing||'environment',batt=null,net=0,note='',nclips=0;
 async function openCam(){try{stream&&stream.getTracks().forEach(t=>t.stop());
   const vc={facingMode:facing,width:{ideal:640},height:{ideal:480},frameRate:{ideal:10}};
   stream=await navigator.mediaDevices.getUserMedia({video:vc,audio:false});micErr='';
@@ -86,10 +93,10 @@ async function openCam(){try{stream&&stream.getTracks().forEach(t=>t.stop());
   vid.srcObject=stream;await vid.play();prev=null;note='';}catch(e){note='Камера: '+(e.message||e)}
  try{await navigator.wakeLock.request('screen')}catch{}}
 const flip=async()=>{facing=L.facing=facing=='environment'?'user':'environment';await openCam();setTimeout(sendFrame,1500)};
-const snap=()=>new Promise(r=>{const w=320,h=Math.round(w*(vid.videoHeight||3)/(vid.videoWidth||4));fc.width=w;fc.height=h;fc.getContext('2d').drawImage(vid,...crop(),0,0,w,h);fc.toBlob(r,'image/jpeg',.55)});
-async function sendFrame(){if(!stream||!vid.videoWidth)return;try{await put(TS(),await snap(),{Filename:'f.jpg',Priority:'1','X-Message':jh({k:'frame',c:cfg.cid,n:cfg.name,b:batt,e:cfg.every,f:facing,zm:dz,tc:caps.torch?1:0,z:caps.zoom?[caps.zoom.min,caps.zoom.max]:0})});note='';return 1}
+const snap=(w=320,q=.55)=>new Promise(r=>{const h=Math.round(w*(vid.videoHeight||3)/(vid.videoWidth||4));fc.width=w;fc.height=h;fc.getContext('2d').drawImage(vid,...crop(),0,0,w,h);fc.toBlob(r,'image/jpeg',q)});
+async function sendFrame(){if(!stream||!vid.videoWidth)return;if(!room(40)){note='Лимит сообщений на сегодня почти исчерпан';return}try{const big=liveOn&&selCid==cfg.cid;await put(TS(),await(liveOn?snap(big?480:240,big?.6:.45):snap()),{Filename:'f.jpg',Priority:'1','X-Message':jh({k:'frame',c:cfg.cid,n:cfg.name,b:batt,tp:temp,e:cfg.every,f:facing,zm:dz,tc:caps.torch?1:0,z:caps.zoom?[caps.zoom.min,caps.zoom.max]:0})});note='';return 1}
  catch(e){note='Ошибка отправки: '+e;if(/429/.test(e))await sleep(5000)}}
-async function flush(){while(queue.length){const q=queue[0];
+async function flush(){while(queue.length&&room(0)){const q=queue[0];
  try{await put(T(),q.b,{Filename:q.k+'.jpg',Title:q.k=='s'?'Sound':'Motion',Tags:q.k=='s'?'loud_sound':'movement','X-Message':(q.k=='s'?'Sound ':'Motion ')+new Date(q.t).toLocaleTimeString('en-GB')+' '+cfg.cid});queue.shift();note='Уведомление отправлено'}
  catch(e){note='Уведомление не ушло: '+e;return}}}
 
@@ -97,22 +104,23 @@ async function sendClip(tms){const a=await idb('readonly',s=>s.getAll());let bes
  a.forEach(c=>{if(Math.abs(c.t-tms)<180000&&(!best||Math.abs(c.t-tms)<Math.abs(best.t-tms)))best=c});
  if(!best||best.b.size>14e6)return post(TS(),{k:'noclip',c:cfg.cid}).catch(()=>{});
  note='Отправляю клип '+(best.b.size/1024|0)+' КБ…';try{await put(TS(),best.b,{Filename:'c.webm','X-Message':jh({k:'clipdata',c:cfg.cid}),Priority:'1'},180000);note=''}catch(e){note='Клип не ушёл: '+e}}
+const limMsg=()=>post(TS(),{k:'res',c:cfg.cid,msg:'Лимит сообщений на сегодня исчерпан — живой режим остановлен'}).catch(()=>{});
 let dz=1,cOn=0,upBusy=0,seq=0;const zc=document.createElement('canvas');zc.width=320;zc.height=240;
 const crop=()=>{const w=vid.videoWidth,h=vid.videoHeight,cw=w/dz,ch=h/dz;return[(w-cw)/2,(h-ch)/2,cw,ch]};
-async function liveLoop(){liveOn=1;let gap=1200;while(Date.now()<liveUntil&&liveM=='f'){const t=Date.now(),ok=await sendFrame();gap=ok?Math.max(700,gap*.85):Math.min(6000,gap*2);await sleep(Math.max(0,gap-(Date.now()-t)))}liveOn=0}
+async function liveLoop(){liveOn=1;const mg=cfg.lim>=1000?700:6000;let gap=Math.max(1200,mg);while(Date.now()<liveUntil&&liveM=='f'&&room(40)){const t=Date.now(),ok=await sendFrame();gap=ok?Math.max(mg,gap*.85):Math.min(6000,gap*2);await sleep(Math.max(0,gap-(Date.now()-t)))}liveOn=0;if(!room(40))limMsg()}
 async function chunkLoop(){cOn=1;const di=setInterval(()=>{if(vid.videoWidth)zc.getContext('2d').drawImage(vid,...crop(),0,0,320,240)},100);
  const cs=zc.captureStream(10);stream.getAudioTracks().forEach(t=>cs.addTrack(t));const mt=['video/webm;codecs=vp8,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t));
- while(Date.now()<liveUntil&&liveM=='v'){const ch=[],r=new MediaRecorder(cs,{mimeType:mt,videoBitsPerSecond:110000,audioBitsPerSecond:16000}),end=new Promise(x=>r.onstop=x);
+ while(Date.now()<liveUntil&&liveM=='v'&&room(40)){const ch=[],r=new MediaRecorder(cs,{mimeType:mt,videoBitsPerSecond:110000,audioBitsPerSecond:16000}),end=new Promise(x=>r.onstop=x);
   r.ondataavailable=e=>e.data.size&&ch.push(e.data);r.start();await sleep(5500);r.stop();await end;
   if(!upBusy){upBusy=1;put(TS(),new Blob(ch,{type:mt}),{Filename:'l.webm',Priority:'1','X-Message':jh({k:'chunk',c:cfg.cid,s:++seq})},40000).then(()=>note='').catch(e=>note='Видео-кусок не ушёл: '+e).finally(()=>upBusy=0)}}
- clearInterval(di);cs.getVideoTracks().forEach(t=>t.stop());cOn=0}
+ clearInterval(di);cs.getVideoTracks().forEach(t=>t.stop());cOn=0;if(!room(40))limMsg()}
 async function onCmd(d){if(Date.now()/1000-d.time>60)return;let m;try{m=JSON.parse(d.message)}catch{return}if(m.c&&m.c!=cfg.cid)return;
  const say=msg=>post(TS(),{k:'res',c:cfg.cid,msg}).catch(()=>{});
  if(m.k=='torch')torch(m.v);if(m.k=='siren')siren(m.v);if(m.k=='snap')sendFrame();if(m.k=='flip')flip();
  if(m.k=='zoom'){dz=Math.min(4,Math.max(1,+m.v||1));say('Зум ×'+dz+' (программный)');sendFrame()}
  if(m.k=='say'&&d.attachment){const a=new Audio(d.attachment.url);a.play().catch(e=>note='Голос: '+(e.name||e))}
  if(m.k=='unwatch')liveUntil=0;if(m.k=='clip')sendClip(m.t);
- if(m.k=='watch'){liveM=m.m||'f';liveUntil=Date.now()+45000;if(liveM=='f'&&!liveOn)liveLoop();if(liveM=='v'&&!cOn)chunkLoop()}}
+ if(m.k=='watch'){liveM=m.m||'f';selCid=m.s||'';liveUntil=Date.now()+360000;if(liveM=='f'&&!liveOn)liveLoop();if(liveM=='v'&&!cOn)chunkLoop()}}
 function startRec(){const m=['video/webm;codecs=vp8,opus','video/webm;codecs=vp8','video/webm','video/mp4'].find(t=>MediaRecorder.isTypeSupported(t)),ch=[],t0=Date.now();recT=t0;
  const r=rec=new MediaRecorder(stream,{mimeType:m,videoBitsPerSecond:300000});r.ondataavailable=e=>e.data.size&&ch.push(e.data);
  r.onstop=async()=>{await idb('readwrite',s=>s.put({t:t0,b:new Blob(ch,{type:m})}));prune()};r.start(2000)}
@@ -127,7 +135,7 @@ function tick(){if(!stream||!vid.videoWidth)return;const now=Date.now();
  else if(rec&&(now-lastMove>7000||now-recT>60000)){rec.stop();rec=null}
  mic();const lv=level();snd=cfg.asens&&lv>.6-cfg.asens*.055?snd+1:0;if(snd>=2&&now-lastSnd>60000){lastSnd=now;notify('s',now)}
  $('s1').textContent=(sirH?'🚨 СИРЕНА (нажмите, чтобы выключить)':(rec?'🔴 Запись':'🟢 Наблюдение'))+' · '+cfg.name;
- $('s2').textContent='Связь: '+(net==2?'ок (запасной режим)':net?'ок':'нет')+' · очередь: '+queue.length+(batt!=null?' · 🔋'+batt+'%':'')+' · записей: '+nclips+(stream.getAudioTracks().length?'':' · 🎤 нет микрофона ('+micErr+') — разрешите в настройках Android')+(liveOn||cOn?' · 👁 смотрят':'')+(note?' · '+note:'')}
+ $('s2').textContent='Связь: '+(net==2?'ок (запасной режим)':net?'ок':'нет')+' · очередь: '+queue.length+(batt!=null?' · 🔋'+batt+'%':'')+(temp!=null?' · 🌡'+temp+'°':'')+' · записей: '+nclips+(stream.getAudioTracks().length?'':' · 🎤 нет микрофона ('+micErr+') — разрешите в настройках Android')+(liveOn||cOn?' · 👁 смотрят':'')+' · сообщ. '+(L.bn||0)+'/'+cfg.lim+(cl()?' · ⏸ лимит сервера, пауза '+cl()+' с':'')+(note?' · '+note:'')}
 const notify=(k,t)=>snap().then(b=>{queue.push({b,t,k});queue=queue.slice(-20);flush()});
 function mic(){if(an||!stream||!stream.getAudioTracks().length||!ac)return;an=ac.createAnalyser();an.fftSize=512;adata=new Uint8Array(512);ac.createMediaStreamSource(new MediaStream(stream.getAudioTracks())).connect(an)}
 function level(){if(!an)return 0;an.getByteTimeDomainData(adata);let m=0;for(const v of adata)m=Math.max(m,Math.abs(v-128));return m/128}
@@ -140,8 +148,10 @@ const torch=v=>{tcOn=v;ctl({torch:!!v})};
 function siren(on){if(!ac)return;ac.resume();if(sirH){clearInterval(sirH.i);sirH.o.stop();sirH=0}if(!on)return;
  const o=ac.createOscillator(),g=ac.createGain();o.type='square';g.gain.value=1;o.connect(g);g.connect(ac.destination);o.start();let f=0;
  const i=setInterval(()=>o.frequency.value=(f^=1)?1000:600,400);sirH={o,i};setTimeout(()=>sirH&&sirH.o===o&&siren(0),30000)}
-async function bat(){try{const b=await navigator.getBattery();batt=Math.round(b.level*100);chg=b.charging;
- if(batt<=15&&!chg&&Date.now()-lastLow>18e5){lastLow=Date.now();fetch(T(),{method:'POST',body:'Low battery '+batt+'% '+cfg.cid,headers:{Title:'Battery',Tags:'battery'}}).catch(()=>{})}}catch{}}
+async function bat(){try{const pl=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.BatteryTemp;
+ if(pl){const x=await pl.get();batt=x.level;chg=x.charging;temp=x.temp>0?x.temp:null}else{const b=await navigator.getBattery();batt=Math.round(b.level*100);chg=b.charging}
+ if(batt<=15&&!chg&&Date.now()-lastLow>18e5){lastLow=Date.now();fetch(T(),{method:'POST',body:'Low battery '+batt+'% '+cfg.cid,headers:{Title:'Battery',Tags:'battery'}}).catch(()=>{})}
+ if(temp>=42&&Date.now()-lastHot>6e5){lastHot=Date.now();fetch(T(),{method:'POST',body:'Overheat '+temp+'C '+cfg.cid,headers:{Title:'Heat',Tags:'fire'}}).catch(()=>{})}}catch{}}
 async function startCam(){$('cam').hidden=0;ac=new AudioContext();$('ov').onclick=()=>siren(0);document.addEventListener('click',()=>ac.resume());await openCam();bat();prune();
  listen(cfg.code+'-s',onCmd,Math.floor(Date.now()/1000),v=>net=v);
  setInterval(tick,400);setInterval(flush,20000);addEventListener('online',flush);
@@ -154,23 +164,23 @@ async function clips(){const el=$('cl');el.hidden=0;const a=await idb('readonly'
   const p=document.createElement('button');p.textContent='▶ Смотреть';p.onclick=()=>{const v=document.createElement('video');v.className='big';v.src=URL.createObjectURL(c.b);v.controls=1;v.play();p.replaceWith(v)};
   const x=document.createElement('button');x.className='g';x.textContent='🗑 Удалить';x.onclick=async()=>{await idb('readwrite',s=>s.delete(c.t));clips()};d.append(p,x);el.append(d)})}
 // ---------- ПРОСМОТР ----------
-let V={cams:{},ev:[],sel:''},wt=0,vsir=0,tv=0,at,live='',held=0,rc,rch,svT;const TL={},FT={},LD={};
+let V={cams:{},ev:[],sel:''},mode='f',ww=0,wt=0,vsir=0,tv=0,at,live='',held=0,rc,rch,svT;const TL={},FT={},LD={};
 try{V=Object.assign(V,JSON.parse(L.v||'{}'));V.cams=V.cams||{}}catch{}
-const save=()=>{try{L.v=jh(V)}catch{}},C=()=>V.cams[V.sel]||{},P=o=>post(TS(),{...o,c:V.sel}).catch(()=>{}),ST=t=>$('ls').textContent=t;
-const KN={Motion:'Движение',Sound:'🔊 Звук',Battery:'🔋 Низкий заряд'},nm=id=>(V.cams[id]||{}).n||'камера';
+const save=()=>{try{L.v=jh(V)}catch{}},C=()=>V.cams[V.sel]||{},P=o=>post(TS(),{...o,c:V.sel}).catch(e=>ST('Команда не отправлена: '+e)),ST=t=>$('ls').textContent=t;
+const KN={Heat:'🔥 Перегрев телефона',Motion:'Движение',Sound:'🔊 Звук',Battery:'🔋 Низкий заряд'},nm=id=>(V.cams[id]||{}).n||'камера';
 function next(id){const t=TL[id],u=t.q.shift();if(!u)return;t.vid.hidden=0;t.img.hidden=1;t.vid.muted=id!=V.sel;t.vid.src=u;t.vid.play().catch(()=>{t.vid.muted=true;t.vid.play().catch(()=>{})})}
 function tile(id){if(TL[id])return TL[id];const el=document.createElement('div'),img=document.createElement('img'),vid=document.createElement('video'),cap=document.createElement('div');
  el.className='tile';cap.className='cap';vid.playsInline=true;vid.hidden=true;el.append(img,vid,cap);
  vid.onended=vid.onerror=()=>next(id);
- el.onclick=()=>{V.big=V.sel==id&&V.big==id?'':id;V.sel=id;save();Object.entries(TL).forEach(([k,t])=>t.vid.muted=k!=id);render();if(V.big)el.scrollIntoView({behavior:'smooth',block:'nearest'})};$('grid').append(el);return TL[id]={el,img,vid,cap,q:[]}}
+ el.onclick=()=>{V.big=V.big==id?'':id;V.sel=id;save();sendWatch();Object.entries(TL).forEach(([k,t])=>t.vid.muted=k!=id);render();if(V.big)el.scrollIntoView({behavior:'smooth',block:'nearest'})};$('grid').append(el);return TL[id]={el,img,vid,cap,q:[]}}
 function render(){const now=Date.now()/1000,c=C();
  Object.entries(V.cams).forEach(([id,x])=>{const t=tile(id),ok=now-x.t<(x.e||5)*60+90,src=x.d||x.u||'';
   if(src&&t.src!=src){t.img.src=src;t.src=src}
-  t.cap.textContent=(ok?'🟢 ':'🔴 ')+(x.n||id)+' · '+(x.t?new Date(x.t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—')+(x.b!=null?' · 🔋'+x.b+'%':'')+(x.zm>1?' · ×'+x.zm:'');
+  t.cap.textContent=(ok?'🟢 ':'🔴 ')+(x.n||id)+' · '+(x.t?new Date(x.t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—')+(x.b!=null?' · 🔋'+x.b+'%':'')+(x.tp!=null?' · 🌡'+x.tp+'°':'')+(x.zm>1?' · ×'+x.zm:'');
   const big=id==V.big;t.el.style.outline=id==V.sel?'3px solid #22c55e':'none';t.el.style.gridColumn=big?'1/-1':'';t.el.style.order=big?-1:0;t.img.style.cssText=t.vid.style.cssText=big?'object-fit:contain;max-height:75vh;min-height:220px':'';
   if(x.u&&!x.d&&!LD[id]&&!live){LD[id]=1;loadFrame(id)}});
  const age=c.t?now-c.t:1e9,ok=age<(c.e||5)*60+90;
- $('vs').textContent=(net==2?'🟡 запасной режим связи · ':net?'':'🟠 нет связи · ')+(Object.keys(V.cams).length?(ok||live?'🟢 выбрана: ':'🔴 выбрана: ')+(c.n||''):'⚪ ждём первый кадр');
+ $('vs').textContent=(cl()?'⏸ лимит сервера, пауза '+cl()+' с · ':'')+(net==2?'🟡 запасной режим связи · ':net?'':'🟠 нет связи · ')+(Object.keys(V.cams).length?(ok||live?'🟢 выбрана: ':'🔴 выбрана: ')+(c.n||''):'⚪ ждём первый кадр');
  $('lt').textContent=c.t?'Выбрана «'+(c.n||'')+'» (нажмите на кадр, чтобы выбрать другую) · '+(c.f?(c.f=='user'?'фронтальная':'основная')+' камера':''):'Кадров ещё нет — нажмите «Обновить все»';
  if(document.activeElement!==$('zm'))$('zm').value=c.zm||1}
 function evList(){const el=$('evl');el.innerHTML=V.ev.length?'':'<small>Пока тихо</small>';
@@ -184,18 +194,21 @@ function onMsg(d){if(!d.topic.endsWith('-s')){if(V.ev.some(e=>e.id==d.id))return
   if(d.time>Date.now()/1000-120){try{navigator.vibrate(300)}catch{}try{new Notification(KN[d.title]||'Событие')}catch{}}return}
  let m;try{m=JSON.parse(d.message)}catch{return}
  if(m.k=='frame'&&d.attachment){const x=V.cams[m.c]||(V.cams[m.c]={});if(!V.sel)V.sel=m.c;if(d.time<=(x.t||0))return;
-  Object.assign(x,{t:d.time,u:d.attachment.url,n:m.n,b:m.b,e:m.e,f:m.f,zm:m.zm});
+  Object.assign(x,{t:d.time,u:d.attachment.url,n:m.n,b:m.b,tp:m.tp,e:m.e,f:m.f,zm:m.zm});
   if(live)x.d=0;else{clearTimeout(FT[m.c]);FT[m.c]=setTimeout(()=>loadFrame(m.c),400)}clearTimeout(svT);svT=setTimeout(save,3000);render()}
  if(m.k=='chunk'&&d.attachment&&live=='v'&&d.time>Date.now()/1000-30){const t=TL[m.c];if(!t)return;t.q.push(d.attachment.url);t.q=t.q.slice(-2);if(t.vid.paused||t.vid.ended)next(m.c)}
  if(m.k=='clipdata'&&d.attachment){$('clip').innerHTML='<video class="big" controls autoplay playsinline style="width:100%"></video>';$('clip').firstChild.src=d.attachment.url}
  if(m.k=='noclip')$('clip').textContent='Клип не найден на камере (устарел или удалён)';
  if(m.k=='res'&&m.c==V.sel)ST(m.msg)}
-const snapReq=()=>{post(TS(),{k:'snap'}).catch(()=>{});ST('Запрос кадров у всех камер отправлен…')},flipReq=()=>{P({k:'flip'});ST('Переключаю камеру…')};
-function liveStop(){live='';clearInterval(wt);wt=0;clearTimeout(at);post(TS(),{k:'unwatch'}).catch(()=>{});
- Object.values(TL).forEach(t=>{t.vid.pause();t.vid.hidden=1;t.img.hidden=0;t.q=[]});$('lbf').textContent='⚡ Кадры';$('lbv').textContent='🎧 Видео+звук';ST('');Object.keys(V.cams).forEach(loadFrame);render()}
-function liveToggle(m){if(live==m)return liveStop();if(live)liveStop();live=m;$('lb'+m).textContent='⏹ Стоп';
- const w=()=>post(TS(),{k:'watch',m}).catch(()=>{});w();wt=setInterval(w,20000);at=setTimeout(()=>live&&liveStop(),900000);
- ST(m=='v'?'Видео со звуком: задержка около 8–10 с, звук у выбранной камеры':'Кадры с максимальной скоростью, которую пропускает сервер');render()}
+const snapReq=()=>{if(!live){watchOn();ST('Каскад кадров запущен');return}post(TS(),{k:'snap'}).catch(()=>{});ST('Запрос кадров у всех камер отправлен…')},flipReq=()=>{P({k:'flip'});ST('Переключаю камеру…')};
+function sendWatch(){if(!live||ww)return;ww=1;post(TS(),{k:'watch',m:mode,s:V.big||''}).then(()=>ww=0).catch(()=>{ww=0;if(live)setTimeout(sendWatch,(cl()||5)*1000+500)})}
+function watchOn(){if(live)return;live=mode;sendWatch();wt=setInterval(sendWatch,240000);clearTimeout(at);
+ at=setTimeout(()=>{if(live){liveStop();ST('Каскад приостановлен через 15 мин (экономия лимита сообщений). Нажмите «Обновить все», чтобы продолжить')}},900000);render()}
+function liveStop(){if(!live)return;live='';clearInterval(wt);wt=0;clearTimeout(at);post(TS(),{k:'unwatch'}).catch(()=>{});
+ Object.values(TL).forEach(t=>{t.vid.pause();t.vid.hidden=1;t.img.hidden=0;t.q=[]});ST('');Object.keys(V.cams).forEach(loadFrame);render()}
+function setMode(m){mode=m;$('lbv').textContent=m=='v'?'⏹ Назад к кадрам':'🎧 Видео+звук';
+ if(m=='f')Object.values(TL).forEach(t=>{t.vid.pause();t.vid.hidden=1;t.img.hidden=0;t.q=[]});
+ ST(m=='v'?'Видео со звуком: задержка около 8–10 с, звук у выбранной камеры':'');if(live){live=m;sendWatch()}else watchOn()}
 async function talk(on){held=on;if(!on){rc&&rc.state=='recording'&&rc.stop();return}
  try{const ms=await navigator.mediaDevices.getUserMedia({audio:true});if(!held){ms.getTracks().forEach(t=>t.stop());return}
   rch=[];rc=new MediaRecorder(ms);rc.ondataavailable=e=>rch.push(e.data);
@@ -203,7 +216,7 @@ async function talk(on){held=on;if(!on){rc&&rc.state=='recording'&&rc.stop();ret
   rc.start();ST('🎤 Говорите…')}catch(e){ST('Микрофон: '+(e.name||e)+' — разрешите в настройках Android')}}
 function startView(){$('view').hidden=0;try{Notification.requestPermission()}catch{}
  const b=$('ptt');b.onpointerdown=()=>talk(1);b.onpointerup=b.onpointerleave=b.onpointercancel=()=>talk(0);
- render();evList();setInterval(render,15000);document.addEventListener('visibilitychange',()=>document.hidden&&live&&liveStop());
- listen(cfg.code+','+cfg.code+'-s',onMsg,'12h',v=>{net=v;render()});setTimeout(snapReq,2500)}
+ render();evList();setInterval(render,15000);document.addEventListener('visibilitychange',()=>document.hidden?liveStop():watchOn());
+ listen(cfg.code+','+cfg.code+'-s',onMsg,'12h',v=>{net=v;render()});setTimeout(watchOn,2500)}
 if(L.role)go(L.role);
 </script></body></html>
