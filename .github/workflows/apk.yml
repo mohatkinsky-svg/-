@@ -13,9 +13,54 @@ jobs:
       - run: npx cap add android
       - name: Permissions
         run: |
-          sed -i 's|<application|<uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <application|' android/app/src/main/AndroidManifest.xml
+          sed -i 's|<application|<uses-permission android:name="android.permission.CAMERA" />\\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\\n    <application|' android/app/src/main/AndroidManifest.xml
+      - name: Battery temperature plugin
+        run: |
+          D=android/app/src/main/java/com/watchcam/app
+          cp $D/MainActivity.java /tmp/MainActivity.orig
+          cat > $D/BatteryTempPlugin.java <<'EOF'
+          package com.watchcam.app;
+          import android.content.Intent;
+          import android.content.IntentFilter;
+          import android.os.BatteryManager;
+          import com.getcapacitor.JSObject;
+          import com.getcapacitor.Plugin;
+          import com.getcapacitor.PluginCall;
+          import com.getcapacitor.PluginMethod;
+          import com.getcapacitor.annotation.CapacitorPlugin;
+          @CapacitorPlugin(name = "BatteryTemp")
+          public class BatteryTempPlugin extends Plugin {
+            @PluginMethod
+            public void get(PluginCall call) {
+              Intent i = getContext().registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+              JSObject r = new JSObject();
+              if (i != null) {
+                r.put("temp", i.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) / 10.0);
+                r.put("level", i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1));
+                int st = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+                r.put("charging", st == BatteryManager.BATTERY_STATUS_CHARGING || st == BatteryManager.BATTERY_STATUS_FULL);
+              }
+              call.resolve(r);
+            }
+          }
+          EOF
+          cat > $D/MainActivity.java <<'EOF'
+          package com.watchcam.app;
+          import android.os.Bundle;
+          import com.getcapacitor.BridgeActivity;
+          public class MainActivity extends BridgeActivity {
+            @Override
+            public void onCreate(Bundle savedInstanceState) {
+              registerPlugin(BatteryTempPlugin.class);
+              super.onCreate(savedInstanceState);
+            }
+          }
+          EOF
       - run: npx cap sync android
-      - run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - name: Build (if plugin fails, rebuild without it)
+        run: |
+          cd android && chmod +x gradlew
+          ./gradlew assembleDebug || { D=app/src/main/java/com/watchcam/app; rm $D/BatteryTempPlugin.java; cp /tmp/MainActivity.orig $D/MainActivity.java; ./gradlew assembleDebug; }
       - uses: actions/upload-artifact@v4
         with:
           name: watchcam-apk
