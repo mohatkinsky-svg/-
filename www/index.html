@@ -162,12 +162,12 @@ function next(id){const t=TL[id],u=t.q.shift();if(!u)return;t.vid.hidden=0;t.img
 function tile(id){if(TL[id])return TL[id];const el=document.createElement('div'),img=document.createElement('img'),vid=document.createElement('video'),cap=document.createElement('div');
  el.className='tile';cap.className='cap';vid.playsInline=true;vid.hidden=true;el.append(img,vid,cap);
  vid.onended=vid.onerror=()=>next(id);
- el.onclick=()=>{V.sel=id;save();Object.entries(TL).forEach(([k,t])=>t.vid.muted=k!=id);render()};$('grid').append(el);return TL[id]={el,img,vid,cap,q:[]}}
+ el.onclick=()=>{V.big=V.sel==id&&V.big==id?'':id;V.sel=id;save();Object.entries(TL).forEach(([k,t])=>t.vid.muted=k!=id);render();if(V.big)el.scrollIntoView({behavior:'smooth',block:'nearest'})};$('grid').append(el);return TL[id]={el,img,vid,cap,q:[]}}
 function render(){const now=Date.now()/1000,c=C();
  Object.entries(V.cams).forEach(([id,x])=>{const t=tile(id),ok=now-x.t<(x.e||5)*60+90,src=x.d||x.u||'';
   if(src&&t.src!=src){t.img.src=src;t.src=src}
   t.cap.textContent=(ok?'🟢 ':'🔴 ')+(x.n||id)+' · '+(x.t?new Date(x.t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—')+(x.b!=null?' · 🔋'+x.b+'%':'')+(x.zm>1?' · ×'+x.zm:'');
-  t.el.style.outline=id==V.sel?'3px solid #22c55e':'none';
+  const big=id==V.big;t.el.style.outline=id==V.sel?'3px solid #22c55e':'none';t.el.style.gridColumn=big?'1/-1':'';t.el.style.order=big?-1:0;t.img.style.cssText=t.vid.style.cssText=big?'object-fit:contain;max-height:75vh;min-height:220px':'';
   if(x.u&&!x.d&&!LD[id]&&!live){LD[id]=1;loadFrame(id)}});
  const age=c.t?now-c.t:1e9,ok=age<(c.e||5)*60+90;
  $('vs').textContent=(net==2?'🟡 запасной режим связи · ':net?'':'🟠 нет связи · ')+(Object.keys(V.cams).length?(ok||live?'🟢 выбрана: ':'🔴 выбрана: ')+(c.n||''):'⚪ ждём первый кадр');
