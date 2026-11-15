@@ -38,6 +38,11 @@ nav.tabs button{flex-direction:column;gap:2px;background:none;color:var(--mt);fo
 #bar{position:absolute;left:0;right:0;bottom:0;padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:#000c}
 #cl{position:fixed;inset:0;background:var(--bg);overflow:auto;padding:14px;z-index:5}img.big,video.big{width:100%;border-radius:10px;background:#000;display:block}
 #dim{position:fixed;inset:0;background:#000;display:none;z-index:9;color:#222;align-items:center;justify-content:center}
+.chip.low{color:var(--rd);border-color:#7f1d1d}.cap.low{color:#fca5a5}.seg{display:flex;gap:8px;margin-bottom:8px}.seg button{margin:0}
+.lr{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--ln)}.lr b{font-weight:600}.lr>div:last-child{display:flex;flex-direction:column}.lt{width:10px;height:10px;border-radius:50%;background:var(--mt);flex:0 0 10px;margin-top:6px}
+.lt.Motion{background:#3b82f6}.lt.Sound{background:#a855f7}.lt.Battery{background:#f59e0b}.lt.Heat,.lt.Offline{background:var(--rd)}.lt.Power,.lt.Online{background:var(--ok)}
+#gear{position:absolute;top:calc(10px + env(safe-area-inset-top));right:12px;z-index:3;background:#0009}#ov{padding-right:76px}
+#gr{position:fixed;inset:0;background:var(--bg);z-index:24;overflow:auto;padding:16px}
 </style></head><body>
 <div id="home" class="p"><div class="brand">WatchCam</div><p class="mt" style="margin-top:0">Видеонаблюдение с телефона</p>
 <div class="c"><small>Код связи — один на все телефоны, как пароль</small><input id="code" autocapitalize="off" autocomplete="off">
@@ -45,35 +50,41 @@ nav.tabs button{flex-direction:column;gap:2px;background:none;color:var(--mt);fo
 <small>Кадр «я на связи», мин (0 — выкл)</small><select id="ev"><option>0<option>15<option>30<option>60</select>
 <small>Лимит сообщений в сутки (ntfy.sh ≈ 250; на своём сервере 1000 и больше — тогда кадры идут с максимальной скоростью)</small><input id="lim" type="number">
 <button class="g" onclick="test()">Проверить связь</button><div id="tr" class="mt"></div></div>
+<div id="bgbox" class="c" hidden><b>Работа в фоне (только в APK)</b><label class="fr"><span>Работать при выключенном экране (эксперимент)</span><input id="bgm" type="checkbox"></label><label class="fr"><span>Напомнить запустить камеру после перезагрузки</span><input id="bt" type="checkbox"></label><button class="g" onclick="NP().ignoreBatt().catch(()=>{})">Отключить экономию батареи для WatchCam</button></div>
 <button onclick="go('cam')" data-i="cam" data-l="Этот телефон — КАМЕРА"></button><button onclick="go('view')" data-i="video" data-l="Этот телефон — ПРОСМОТР"></button></div>
 
 <div id="cam" hidden><video id="cv" playsinline muted autoplay></video>
-<div id="ov"><b id="s1">…</b><br><small id="s2"></small></div>
+<button id="gear" class="ib g" onclick="home()" data-i="gear"></button><div id="ov"><b id="s1">…</b><br><small id="s2"></small></div>
 <div id="bar"><div class="row"><small style="flex:0 0 110px">Движение</small><input id="sens" type="range" min="1" max="10"></div>
 <div class="row"><small style="flex:0 0 110px">Звук (0 — выкл)</small><input id="asens" type="range" min="0" max="10"></div>
 <label><input id="asr" type="checkbox" style="width:auto"> Сирена при движении</label>
-<div class="row"><button class="g" onclick="dim.style.display='flex'">🌙 Экран</button><button class="g" onclick="flip()">🔄 Камера</button><button class="g" onclick="torch(!tcOn)">🔦</button><button class="g" onclick="clips()">🎞</button><button class="g" onclick="home()">⚙</button></div></div>
+<div class="row"><button class="g" onclick="dimOn()">🌙 Экран</button><button class="g" onclick="flip()">🔄 Камера</button><button class="g" onclick="torch(!tcOn)">🔦</button><button class="g" onclick="clips()">🎞</button></div></div>
 <div id="cl" hidden></div></div>
 
 <div id="view" hidden>
 <header class="top"><span class="brand">WatchCam</span><span id="vs" class="chip">…</span></header>
 <main class="p">
-<section id="p-cams"><div id="grid"></div><div id="ls" class="mt" style="margin:8px 0"></div><button class="g" onclick="snapReq()" data-i="flip" data-l="Обновить кадры"></button></section>
-<section id="p-arch" hidden><h3>Архив снимков</h3><div id="folders"></div></section>
+<section id="p-cams"><div id="bats" class="row" style="flex-wrap:wrap;margin-bottom:10px"></div><div id="grid"></div><div id="ls" class="mt" style="margin:8px 0"></div><button class="g" onclick="snapReq()" data-i="flip" data-l="Обновить кадры"></button></section>
+<section id="p-arch" hidden><div class="seg"><button id="sg1" onclick="arcMode('p')">Снимки</button><button id="sg2" class="g" onclick="arcMode('l')">Журнал</button><button id="sg3" class="g" onclick="arcMode('t')">Таймлапс</button></div><div id="folders"></div>
+<div id="tlv" hidden><div class="c"><select id="tlc"></select><select id="tlr"><option value="6">Последние 6 часов<option value="24" selected>Последние 24 часа<option value="72">Последние 3 дня<option value="168">Последние 7 дней</select><button onclick="tlLoad()">Загрузить таймлапс с камеры</button><div id="tls" class="mt"></div></div>
+<div id="tlp" hidden><img id="tli" class="big" style="aspect-ratio:4/3;object-fit:contain"><div class="row" style="margin-top:8px"><button class="ib g" id="tlpp" onclick="tlPlay(!tlt)"></button><input id="tlsl" type="range" min="0" value="0" oninput="tlSeek(+this.value)"><select id="tlf" style="flex:0 0 96px" onchange="tlPlay(1)"><option value="6">6 к/с<option value="12" selected>12 к/с<option value="24">24 к/с</select></div><small id="tlc2" class="mt"></small></div></div>
+<div id="logv" hidden><select id="lf" onchange="logView()"><option value="">Все события<option value="a">Тревоги (движение, звук)<option value="p">Питание и температура<option value="n">Связь камер<option value="u">Мои действия</select><div id="logl"></div><button class="g" onclick="logClear()">Очистить журнал</button></div></section>
 <section id="p-set" hidden><h3>Оповещения и приложение</h3><div id="vsf" class="c"></div><h3>Камеры</h3><div id="camset"></div><h3>Подключение</h3><div class="c"><button class="g" onclick="home()">Сменить режим или сервер</button></div></section>
 </main>
 <nav class="tabs"><button id="t-cams" class="on" onclick="setTab('cams')" data-i="cam" data-l="Камеры"></button><button id="t-arch" onclick="setTab('arch')" data-i="folder" data-l="Архив"></button><button id="t-set" onclick="setTab('set')" data-i="set" data-l="Настройки"></button></nav>
 <div id="fs" hidden><img id="fsi"><video id="fsv" playsinline hidden></video>
-<div class="fb top"><button class="ib g" onclick="closeFs()" data-i="x"></button><div class="grow"><b id="fst"></b><small id="fss"></small></div><button class="ib g" onclick="openSh(fo)" data-i="set"></button></div>
+<div class="fb top"><button class="ib g" onclick="closeFs()" data-i="x"></button><div class="grow"><b id="fst"></b><small id="fss"></small></div><button class="ib g" onclick="openGr(fo)" data-i="chart"></button><button class="ib g" onclick="openSh(fo)" data-i="set"></button></div>
 <div id="zp" class="zp" hidden><button class="ib g" onclick="zoomBy(-.5)" data-i="minus"></button><b id="zv">×1</b><button class="ib g" onclick="zoomBy(.5)" data-i="plus"></button></div>
-<div class="fb bot"><button id="bv" class="ib g" onclick="vmode()" data-i="video"></button><button class="ib g" onclick="$('zp').hidden=!$('zp').hidden" data-i="zoom"></button><button class="ib g" onclick="tv=!tv;P({k:'torch',v:tv})" data-i="torch"></button><button class="ib g" onclick="P({k:'flip'})" data-i="flip"></button><button class="ib g" onclick="P({k:'siren',v:vsir=!vsir})" data-i="siren"></button><button id="ptt" class="ib" data-i="mic"></button></div></div>
+<div class="fb bot"><button id="bv" class="ib g" onclick="vmode()" data-i="video"></button><button class="ib g" onclick="$('zp').hidden=!$('zp').hidden" data-i="zoom"></button><button class="ib g" onclick="tv=!tv;P({k:'torch',v:tv});act(V.sel,tv?'Фонарик включён':'Фонарик выключен')" data-i="torch"></button><button class="ib g" onclick="P({k:'flip'});act(V.sel,'Камера переключена')" data-i="flip"></button><button class="ib g" onclick="P({k:'siren',v:vsir=!vsir});act(V.sel,vsir?'Сирена включена':'Сирена выключена')" data-i="siren"></button><button id="ptt" class="ib" data-i="mic"></button></div></div>
 <div id="pl" hidden><img id="pi0" class="pim"><img id="pi1" class="pim">
 <div class="fb top"><button class="ib g" onclick="closePl()" data-i="x"></button><div class="grow"><b id="pt"></b><small id="pc"></small></div></div>
 <div class="fb bot"><button class="ib g" onclick="plStep(-1)" data-i="prev"></button><button id="pp" class="ib" onclick="plPlay(!ptm)"></button><button class="ib g" onclick="plStep(1)" data-i="next"></button><button class="ib g" onclick="plClip()" data-i="film"></button><button class="ib g" onclick="plDel()" data-i="trash"></button></div></div>
 <div id="sh" hidden><div class="row"><b id="sht"></b><button class="ib g" style="flex:0 0 52px" onclick="$('sh').hidden=1" data-i="x"></button></div><div id="shs" class="mt"></div><div id="shf" class="c"></div><button onclick="saveSh()">Сохранить на камеру</button></div>
+<div id="gr" hidden><div class="row"><b id="grt"></b><button class="ib g" style="flex:0 0 52px" onclick="$('gr').hidden=1" data-i="x"></button></div><div class="seg" id="grr" style="margin-top:10px"><button class="g" onclick="grRange(6)">6 ч</button><button onclick="grRange(24)">24 ч</button><button class="g" onclick="grRange(168)">7 дней</button></div>
+<div class="c"><small>Заряд, % (зелёный фон — на зарядке)</small><canvas id="gb" width="680" height="240" style="width:100%"></canvas></div><div class="c"><small>Температура телефона, °C</small><canvas id="gt" width="680" height="240" style="width:100%"></canvas></div><div id="grs" class="mt"></div></div>
 <div id="cm" hidden><video id="cmv" controls playsinline></video><button class="g" onclick="cmClose()">Закрыть</button></div>
 <div id="toast"></div></div>
-<div id="dim" onclick="dim.style.display='none'">нажмите, чтобы включить экран</div>
+<div id="dim" onclick="dimOff()">нажмите, чтобы включить экран</div>
 <script>
 const $=id=>document.getElementById(id),L=localStorage,sleep=ms=>new Promise(r=>setTimeout(r,ms)),dim=$('dim');
 const rnd=()=>Array.from(crypto.getRandomValues(new Uint8Array(12)),x=>'abcdefghjkmnpqrstuvwxyz23456789'[x%31]).join('');
@@ -85,7 +96,7 @@ $('lim').value=cfg.lim;$('lim').onchange=e=>cfg.lim=L.lim=+e.target.value||230;
 $('ev').onchange=e=>cfg.every=L.every=+e.target.value;
 $('name').value=cfg.name;$('name').onchange=e=>cfg.name=L.name=e.target.value.trim()||'Камера';$('asens').value=cfg.asens;$('asens').oninput=e=>cfg.asens=L.asens=+e.target.value;$('asr').checked=L.asr=='1';$('asr').onchange=e=>L.asr=e.target.checked?'1':'0';
 $('sens').oninput=e=>cfg.sens=L.sens=+e.target.value;
-const SD={arc:1,ret:7,cap:1000,am:1,cd:60,rec:1,lowb:1,lowt:15,hot:1,hott:42,sch:0,sf:22,st:7};cfg.S=Object.assign({},SD,JSON.parse(L.S||'{}'));
+const SD={night:1,ng:2.5,tl:0,tli:60,tf:0,tt:24,pw:1,arc:1,ret:7,cap:1000,am:1,cd:60,rec:1,lowb:1,lowt:15,hot:1,hott:42,sch:0,sf:22,st:7};cfg.S=Object.assign({},SD,JSON.parse(L.S||'{}'));
 const inSch=()=>{const S=cfg.S;if(!S.sch)return true;const h=new Date().getHours();return S.sf<S.st?h>=S.sf&&h<S.st:h>=S.sf||h<S.st};
 const curCfg=()=>({...cfg.S,name:cfg.name,sens:cfg.sens,asens:cfg.asens,every:cfg.every,asr:+(L.asr=='1')});
 function applyCfg(v){const n=(k,a,b)=>Math.min(b,Math.max(a,+v[k]||a));
@@ -121,12 +132,12 @@ function listen(topics,h,since,onnet){let last=since,ids=new Set(),es,wd,pt,fail
   es.onerror=()=>{es.close();clearTimeout(wd);onnet(0);fails++;if(fails>=3)startPoll();else wd=setTimeout(go,3000*fails)}};
  go();document.addEventListener('visibilitychange',()=>{if(document.hidden)return;if(polling){clearTimeout(pt);poll()}else go()})}
 // ---------- IndexedDB ----------
-const dbp=new Promise(r=>{const q=indexedDB.open('wc',2);q.onupgradeneeded=()=>{const d=q.result;if(!d.objectStoreNames.contains('c'))d.createObjectStore('c',{keyPath:'t'});if(!d.objectStoreNames.contains('sn'))d.createObjectStore('sn',{keyPath:'t'})};q.onsuccess=()=>r(q.result)});
+const dbp=new Promise(r=>{const q=indexedDB.open('wc',3);q.onupgradeneeded=()=>{const d=q.result;if(!d.objectStoreNames.contains('c'))d.createObjectStore('c',{keyPath:'t'});if(!d.objectStoreNames.contains('sn'))d.createObjectStore('sn',{keyPath:'t'});if(!d.objectStoreNames.contains('tl'))d.createObjectStore('tl',{keyPath:'t'})};q.onsuccess=()=>r(q.result)});
 const idb=async(m,f)=>{const d=await dbp;return new Promise(r=>{const q=f(d.transaction('c',m).objectStore('c'));q.onsuccess=()=>r(q.result)})};
 // ---------- КАМЕРА ----------
 const vid=$('cv'),mx=document.createElement('canvas').getContext('2d',{willReadFrequently:true}),fc=document.createElement('canvas');
 mx.canvas.width=64;mx.canvas.height=48;
-let temp=null,lastHot=0,selCid='',liveM='f',micErr='',caps={},ac,an,adata,sirH=0,tcOn=0,lastSnd=0,snd=0,lastLow=0,chg=0,stream,rec,recT=0,lastMove=0,prev,hits=0,queue=[],lastAlert=0,liveUntil=0,liveOn=0,facing=L.facing||'environment',batt=null,net=0,note='',nsn=0,nclips=0;
+let temp=null,lastHot=0,selCid='',liveM='f',micErr='',caps={},ac,an,adata,sirH=0,tcOn=0,lastSnd=0,snd=0,lastLow=0,chg=0,stream,rec,recT=0,lastMove=0,prev,hits=0,queue=[],lastAlert=0,liveUntil=0,liveOn=0,facing=L.facing||'environment',batt=null,net=0,note='',lum=128,lastTl=0,lastMt=0,pchg=null,nsn=0,nclips=0;
 async function openCam(){try{stream&&stream.getTracks().forEach(t=>t.stop());
   const vc={facingMode:facing,width:{ideal:640},height:{ideal:480},frameRate:{ideal:10}};
   stream=await navigator.mediaDevices.getUserMedia({video:vc,audio:false});micErr='';
@@ -135,8 +146,8 @@ async function openCam(){try{stream&&stream.getTracks().forEach(t=>t.stop());
   vid.srcObject=stream;await vid.play();prev=null;note='';}catch(e){note='Камера: '+(e.message||e)}
  try{await navigator.wakeLock.request('screen')}catch{}}
 const flip=async()=>{facing=L.facing=facing=='environment'?'user':'environment';await openCam();setTimeout(sendFrame,1500)};
-const snap=(w=320,q=.55)=>new Promise(r=>{const h=Math.round(w*(vid.videoHeight||3)/(vid.videoWidth||4));fc.width=w;fc.height=h;fc.getContext('2d').drawImage(vid,...crop(),0,0,w,h);fc.toBlob(r,'image/jpeg',q)});
-async function sendFrame(){if(!stream||!vid.videoWidth)return;if(!room(40)){note='Лимит сообщений на сегодня почти исчерпан';return}try{const big=liveOn&&selCid==cfg.cid;await put(TS(),await(liveOn?snap(big?480:240,big?.6:.45):snap()),{Filename:'f.jpg',Priority:'1','X-Message':jh({k:'frame',c:cfg.cid,n:cfg.name,b:batt,tp:temp,ts:Date.now(),e:cfg.every,f:facing,zm:dz,tc:caps.torch?1:0,z:caps.zoom?[caps.zoom.min,caps.zoom.max]:0})});note='';return 1}
+const snap=(w=320,q=.55)=>new Promise(r=>{const h=Math.round(w*(vid.videoHeight||3)/(vid.videoWidth||4));fc.width=w;fc.height=h;{const g=fc.getContext('2d');g.filter=nf();g.drawImage(vid,...crop(),0,0,w,h)}fc.toBlob(r,'image/jpeg',q)});
+async function sendFrame(){if(!stream||!vid.videoWidth)return;if(!room(40)){note='Лимит сообщений на сегодня почти исчерпан';return}try{const big=liveOn&&selCid==cfg.cid;await put(TS(),await(liveOn?snap(big?480:240,big?.6:.45):snap()),{Filename:'f.jpg',Priority:'1','X-Message':jh({k:'frame',c:cfg.cid,n:cfg.name,b:batt,tp:temp,ch:+chg,ts:Date.now(),e:cfg.every,f:facing,zm:dz,tc:caps.torch?1:0,z:caps.zoom?[caps.zoom.min,caps.zoom.max]:0})});note='';return 1}
  catch(e){note='Ошибка отправки: '+e;if(/429/.test(e))await sleep(5000)}}
 async function flush(){while(queue.length&&room(0)){const q=queue[0];
  try{await put(T(),q.b,{Filename:q.k+q.t+'.jpg',Title:q.k=='s'?'Sound':'Motion',Tags:q.k=='s'?'loud_sound':'movement','X-Message':(q.k=='s'?'Sound ':'Motion ')+new Date(q.t).toLocaleTimeString('en-GB')+' '+cfg.cid});queue.shift();note='Уведомление отправлено'}
@@ -150,7 +161,7 @@ const limMsg=()=>post(TS(),{k:'res',c:cfg.cid,msg:'Лимит сообщений
 let dz=1,cOn=0,upBusy=0,seq=0;const zc=document.createElement('canvas');zc.width=320;zc.height=240;
 const crop=()=>{const w=vid.videoWidth,h=vid.videoHeight,cw=w/dz,ch=h/dz;return[(w-cw)/2,(h-ch)/2,cw,ch]};
 async function liveLoop(){liveOn=1;const mg=cfg.lim>=1000?700:6000;let gap=Math.max(1200,mg);while(Date.now()<liveUntil&&liveM=='f'&&room(40)){const t=Date.now(),ok=await sendFrame();gap=ok?Math.max(mg,gap*.85):Math.min(6000,gap*2);await sleep(Math.max(0,gap-(Date.now()-t)))}liveOn=0;if(!room(40))limMsg()}
-async function chunkLoop(){cOn=1;const di=setInterval(()=>{if(vid.videoWidth)zc.getContext('2d').drawImage(vid,...crop(),0,0,320,240)},100);
+async function chunkLoop(){cOn=1;const di=setInterval(()=>{if(vid.videoWidth){const g=zc.getContext('2d');g.filter=nf();g.drawImage(vid,...crop(),0,0,320,240)}},100);
  const cs=zc.captureStream(10);stream.getAudioTracks().forEach(t=>cs.addTrack(t));const mt=['video/webm;codecs=vp8,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t));
  while(Date.now()<liveUntil&&liveM=='v'&&room(40)){const ch=[],r=new MediaRecorder(cs,{mimeType:mt,videoBitsPerSecond:110000,audioBitsPerSecond:16000}),end=new Promise(x=>r.onstop=x);
   r.ondataavailable=e=>e.data.size&&ch.push(e.data);r.start();await sleep(5500);r.stop();await end;
@@ -162,31 +173,45 @@ async function onCmd(d){if(Date.now()/1000-d.time>60)return;let m;try{m=JSON.par
  if(m.k=='zoom'){dz=Math.min(4,Math.max(1,+m.v||1));say('Зум ×'+dz+' (программный)');sendFrame()}
  if(m.k=='say'&&d.attachment){const a=new Audio(d.attachment.url);a.play().catch(e=>note='Голос: '+(e.name||e))}
  if(m.k=='getcfg')post(TS(),{k:'cfgdata',c:cfg.cid,v:curCfg()}).catch(()=>{});if(m.k=='cfg'){applyCfg(m.v||{});say('Настройки камеры сохранены')}
- if(m.k=='sync')sendArch(+m.since||0);
+ if(m.k=='sync')sendArch(+m.since||0);if(m.k=='tl')sendTl(+m.from,+m.to,+m.n||240);
  if(m.k=='unwatch')liveUntil=0;if(m.k=='clip')sendClip(m.t);
  if(m.k=='watch'){liveM=(m.m=='v'&&m.s==cfg.cid)?'v':'f';selCid=m.s||'';liveUntil=Date.now()+360000;if(liveM=='f'&&!liveOn)liveLoop();if(liveM=='v'&&!cOn)chunkLoop()}}
 function startRec(){const m=['video/webm;codecs=vp8,opus','video/webm;codecs=vp8','video/webm','video/mp4'].find(t=>MediaRecorder.isTypeSupported(t)),ch=[],t0=Date.now();recT=t0;
  const r=rec=new MediaRecorder(stream,{mimeType:m,videoBitsPerSecond:300000});r.ondataavailable=e=>e.data.size&&ch.push(e.data);
  r.onstop=async()=>{await idb('readwrite',s=>s.put({t:t0,b:new Blob(ch,{type:m})}));prune()};r.start(2000)}
-async function prune(){const now=Date.now(),lim=cfg.S.ret*864e5,cs=await idb('readonly',s=>s.getAll()),ss=await sdb('readonly',s=>s.getAll());let dc=0,ds=0,sum=0;
- const all=[...cs.map(x=>({t:x.t,z:x.b.size,s:0})),...ss.map(x=>({t:x.t,z:x.b.size,s:1}))].sort((a,b)=>b.t-a.t);
- for(const e of all){sum+=e.z;if(now-e.t>lim||sum>cfg.S.cap*1e6){sum-=e.z;await(e.s?sdb:idb)('readwrite',s=>s.delete(e.t));e.s?ds++:dc++}}
+async function prune(){const now=Date.now(),lim=cfg.S.ret*864e5,cs=await idb('readonly',s=>s.getAll()),ss=await sdb('readonly',s=>s.getAll()),ts=await tdb('readonly',s=>s.getAll());let dc=0,ds=0,sum=0;
+ const all=[...cs.map(x=>({t:x.t,z:x.b.size,s:0})),...ss.map(x=>({t:x.t,z:x.b.size,s:1})),...ts.map(x=>({t:x.t,z:x.b.size,s:2}))].sort((a,b)=>b.t-a.t);
+ for(const e of all){sum+=e.z;if(now-e.t>lim||sum>cfg.S.cap*1e6){sum-=e.z;await([idb,sdb,tdb][e.s])('readwrite',s=>s.delete(e.t));if(e.s==0)dc++;else if(e.s==1)ds++}}
  nclips=cs.length-dc;nsn=ss.length-ds}
 function tick(){if(!stream||!vid.videoWidth)return;const now=Date.now();
  mx.drawImage(vid,0,0,64,48);const d=mx.getImageData(0,0,64,48).data,cur=new Float32Array(3072);
  for(let i=0;i<3072;i++)cur[i]=d[i*4]*.3+d[i*4+1]*.59+d[i*4+2]*.11;
- let n=0;if(prev)for(let i=0;i<3072;i++)if(Math.abs(cur[i]-prev[i])>25)n++;prev=cur;
+ let n=0;if(prev)for(let i=0;i<3072;i++)if(Math.abs(cur[i]-prev[i])>25)n++;prev=cur;{let sm=0;for(let i=0;i<3072;i++)sm+=cur[i];lum=lum*.9+sm/3072*.1}
+ if(cfg.S.tl&&now-lastTl>=cfg.S.tli*1000&&tlWin()){lastTl=now;snap(240,.5).then(b=>tdb('readwrite',s=>s.put({t:now,b})))}
  hits=n>3072*(11-cfg.sens)*.004?hits+1:0;
- if(hits>=2){lastMove=now;if(!rec&&cfg.S.rec)startRec();if(now-lastAlert>cfg.S.cd*1000){lastAlert=now;const al=cfg.S.am&&inSch();notify('m',now,al);al&&$('asr').checked&&siren(1)}}
+ if(hits>=2){lastMove=now;if(!rec&&cfg.S.rec)startRec();if(now-lastAlert>cfg.S.cd*1000){lastAlert=now;clog('m');const al=cfg.S.am&&inSch();notify('m',now,al);al&&$('asr').checked&&siren(1)}}
  else if(rec&&(now-lastMove>7000||now-recT>60000)){rec.stop();rec=null}
- mic();const lv=level();snd=cfg.asens&&lv>.6-cfg.asens*.055?snd+1:0;if(snd>=2&&now-lastSnd>cfg.S.cd*1000){lastSnd=now;notify('s',now,inSch())}
- $('s1').textContent=(sirH?'🚨 СИРЕНА (нажмите, чтобы выключить)':(rec?'🔴 Запись':'🟢 Наблюдение'))+' · '+cfg.name;
+ mic();const lv=level();snd=cfg.asens&&lv>.6-cfg.asens*.055?snd+1:0;if(snd>=2&&now-lastSnd>cfg.S.cd*1000){lastSnd=now;clog('s');notify('s',now,inSch())}
+ $('s1').textContent=(sirH?'🚨 СИРЕНА (нажмите, чтобы выключить)':(rec?'🔴 Запись':'🟢 Наблюдение'))+' · '+cfg.name+(nightOn()?' · 🌙 ночной режим':'');
  $('s2').textContent='Связь: '+(net==2?'ок (запасной режим)':net?'ок':'нет')+' · очередь: '+queue.length+(batt!=null?' · 🔋'+batt+'%':'')+(temp!=null?' · 🌡'+temp+'°':'')+' · клипов: '+nclips+', снимков: '+nsn+(stream.getAudioTracks().length?'':' · 🎤 нет микрофона ('+micErr+') — разрешите в настройках Android')+(liveOn||cOn?' · 👁 смотрят':'')+' · сообщ. '+(L.bn||0)+'/'+cfg.lim+(cl()?' · ⏸ лимит сервера, пауза '+cl()+' с':'')+(note?' · '+note:'')}
-const sdb=async(m,f)=>{const d=await dbp;return new Promise(r=>{const q=f(d.transaction('sn',m).objectStore('sn'));q.onsuccess=()=>r(q.result)})};
+let LG=[];try{LG=JSON.parse(L.lg||'[]')}catch{}
+let MT=[];try{MT=JSON.parse(L.mt||'[]')}catch{}
+const NP=()=>window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.BatteryTemp;
+function dimOn(){dim.style.display='flex';try{NP().dim({v:.01}).catch(()=>{})}catch{}}
+function dimOff(){dim.style.display='none';try{NP().dim({v:-1}).catch(()=>{})}catch{}}
+const nightOn=()=>cfg.S.night==2||(cfg.S.night==1&&lum<45),nf=()=>nightOn()?'brightness('+cfg.S.ng+') contrast(1.15)':'none';
+const tlWin=()=>{const h=new Date().getHours(),f=cfg.S.tf,t=cfg.S.tt;return f==t||(f<t?h>=f&&h<t:h>=f||h<t)};
+const clog=(k,x)=>{LG.push({t:Date.now(),k,x:x||''});LG=LG.slice(-300);try{L.lg=jh(LG)}catch{}};
+const xdb=st=>async(m,f)=>{const d=await dbp;return new Promise(r=>{const q=f(d.transaction(st,m).objectStore(st));q.onsuccess=()=>r(q.result)})},sdb=xdb('sn'),tdb=xdb('tl');
 const notify=(k,t,send=true)=>snap().then(b=>{if(send){queue.push({b,t,k});queue=queue.slice(-20);flush()}if(cfg.S.arc){sdb('readwrite',s=>s.put({t,k:k=='s'?'s':'m',b}));setTimeout(prune,800)}});
-async function sendArch(since){if(!room(40))return;const a=(await sdb('readonly',s=>s.getAll())).filter(x=>x.t>since).sort((x,y)=>x.t-y.t),b=a.slice(0,60);if(!b.length)return;
- const blob=new Blob([jh({l:b.map(x=>({t:x.t,k:x.k,n:x.b.size}))}),'\n',...b.map(x=>x.b)]);
- try{await put(TS(),blob,{Filename:'a.bin',Priority:'1','X-Message':jh({k:'arch',c:cfg.cid,more:+(a.length>60)})},60000)}catch(e){note='Архив не ушёл: '+e}}
+async function sendArch(since){if(!room(40))return;const a=(await sdb('readonly',s=>s.getAll())).filter(x=>x.t>since).sort((x,y)=>x.t-y.t),b=a.slice(0,60),more=a.length>60,g=more?[]:LG.filter(x=>x.t>since),mt=more?[]:MT.filter(x=>x.t>since);if(!b.length&&!g.length&&!mt.length)return;
+ const blob=new Blob([jh({l:b.map(x=>({t:x.t,k:x.k,n:x.b.size})),g,mt}),'\n',...b.map(x=>x.b)]);
+ try{await put(TS(),blob,{Filename:'a.bin',Priority:'1','X-Message':jh({k:'arch',c:cfg.cid,more:+more})},60000)}catch(e){note='Архив не ушёл: '+e}}
+async function sendTl(from,to,n){const a=(await tdb('readonly',s=>s.getAll())).filter(x=>x.t>=from&&x.t<=to).sort((x,y)=>x.t-y.t);if(!a.length)return post(TS(),{k:'tlb',c:cfg.cid,none:1}).catch(()=>{});
+ const st=Math.max(1,a.length/n),pk=[];for(let i=0;i<a.length&&pk.length<n;i+=st)pk.push(a[Math.floor(i)]);
+ for(let i=0;i<pk.length;i+=60){const b=pk.slice(i,i+60);if(!room(40))break;const blob=new Blob([jh({l:b.map(x=>({t:x.t,n:x.b.size}))}),'\n',...b.map(x=>x.b)]);
+  try{await put(TS(),blob,{Filename:'t.bin',Priority:'1','X-Message':jh({k:'tlb',c:cfg.cid,more:+(i+60<pk.length)})},60000)}catch(e){note='Таймлапс не ушёл: '+e;break}}}
+
 function mic(){if(an||!stream||!stream.getAudioTracks().length||!ac)return;an=ac.createAnalyser();an.fftSize=512;adata=new Uint8Array(512);ac.createMediaStreamSource(new MediaStream(stream.getAudioTracks())).connect(an)}
 function level(){if(!an)return 0;an.getByteTimeDomainData(adata);let m=0;for(const v of adata)m=Math.max(m,Math.abs(v-128));return m/128}
 async function ctl(c){const tr=stream.getVideoTracks()[0],k=Object.keys(c)[0],nmk=k=='torch'?'Фонарик':'Зум',say=msg=>post(TS(),{k:'res',c:cfg.cid,msg:nmk+': '+msg}).catch(()=>{});
@@ -200,9 +225,11 @@ function siren(on){if(!ac)return;ac.resume();if(sirH){clearInterval(sirH.i);sirH
  const i=setInterval(()=>o.frequency.value=(f^=1)?1000:600,400);sirH={o,i};setTimeout(()=>sirH&&sirH.o===o&&siren(0),30000)}
 async function bat(){try{const pl=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.BatteryTemp;
  if(pl){const x=await pl.get();batt=x.level;chg=x.charging;temp=x.temp>0?x.temp:null}else{const b=await navigator.getBattery();batt=Math.round(b.level*100);chg=b.charging}
- if(cfg.S.lowb&&batt<=cfg.S.lowt&&!chg&&Date.now()-lastLow>18e5){lastLow=Date.now();fetch(T(),{method:'POST',body:'Low battery '+batt+'% '+cfg.cid,headers:{Title:'Battery',Tags:'battery'}}).catch(()=>{})}
- if(cfg.S.hot&&temp>=cfg.S.hott&&Date.now()-lastHot>6e5){lastHot=Date.now();fetch(T(),{method:'POST',body:'Overheat '+temp+'C '+cfg.cid,headers:{Title:'Heat',Tags:'fire'}}).catch(()=>{})}}catch{}}
-async function startCam(){$('cam').hidden=0;ac=new AudioContext();$('ov').onclick=()=>siren(0);document.addEventListener('click',()=>ac.resume());await openCam();bat();prune();setInterval(prune,6e5);
+ if(pchg!==null&&chg!=pchg){clog('p',chg?'on':'off');cfg.S.pw&&fetch(T(),{method:'POST',body:'Power '+(chg?'on':'off')+' '+batt+'% '+cfg.cid,headers:{Title:'Power',Tags:'electric_plug'}}).catch(()=>{})}pchg=chg;if(batt!=null&&Date.now()-lastMt>3e5){lastMt=Date.now();MT.push({t:Date.now(),b:batt,tp:temp,ch:+chg});MT=MT.slice(-2016);try{L.mt=jh(MT)}catch{}}
+ if(cfg.S.lowb&&batt<=cfg.S.lowt&&!chg&&Date.now()-lastLow>18e5){lastLow=Date.now();clog('b',batt+'%');fetch(T(),{method:'POST',body:'Low battery '+batt+'% '+cfg.cid,headers:{Title:'Battery',Tags:'battery'}}).catch(()=>{})}
+ if(cfg.S.hot&&temp>=cfg.S.hott&&Date.now()-lastHot>6e5){lastHot=Date.now();clog('h',temp);fetch(T(),{method:'POST',body:'Overheat '+temp+'C '+cfg.cid,headers:{Title:'Heat',Tags:'fire'}}).catch(()=>{})}}catch{}}
+async function startCam(){$('cam').hidden=0;const np=NP();if(np){np.awake({on:true}).catch(()=>{});np.setBoot({on:L.bt=='1'}).catch(()=>{});if(L.bgm=='1')np.startBg().catch(()=>{})}
+ ac=new AudioContext();$('ov').onclick=()=>siren(0);document.addEventListener('click',()=>ac.resume());await openCam();clog('start');bat();prune();setInterval(prune,6e5);
  listen(cfg.code+'-s',onCmd,Math.floor(Date.now()/1000),v=>net=v);
  setInterval(tick,400);setInterval(flush,20000);addEventListener('online',flush);
  setInterval(bat,60000);
@@ -214,47 +241,87 @@ async function clips(){const el=$('cl');el.hidden=0;const a=await idb('readonly'
   const p=document.createElement('button');p.textContent='▶ Смотреть';p.onclick=()=>{const v=document.createElement('video');v.className='big';v.src=URL.createObjectURL(c.b);v.controls=1;v.play();p.replaceWith(v)};
   const x=document.createElement('button');x.className='g';x.textContent='🗑 Удалить';x.onclick=async()=>{await idb('readwrite',s=>s.delete(c.t));clips()};d.append(p,x);el.append(d)})}
 // ---------- ПРОСМОТР ----------
-const IC={x:'M18 6 6 18M6 6l12 12',flip:'M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5',torch:'M13 2 3 14h9l-1 8 10-12h-9z',siren:'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01',mic:'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3',zoom:'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3M11 8v6M8 11h6',video:'M16 8l7-4v16l-7-4M2 5h14v14H2z',play:'M6 4l14 8-14 8z',pause:'M6 4h4v16H6zM14 4h4v16h-4z',prev:'M19 20 9 12l10-8zM5 4v16',next:'M5 4l10 8-10 8zM19 4v16',trash:'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6',set:'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',cam:'M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',folder:'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z',film:'M4 4h16v16H4zM4 9h16M4 15h16M9 4v16M15 4v16',plus:'M12 5v14M5 12h14',minus:'M5 12h14'};
+const IC={chart:'M3 3v18h18M7 14l4-4 4 4 5-6',gear:'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',x:'M18 6 6 18M6 6l12 12',flip:'M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5',torch:'M13 2 3 14h9l-1 8 10-12h-9z',siren:'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01',mic:'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3',zoom:'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3M11 8v6M8 11h6',video:'M16 8l7-4v16l-7-4M2 5h14v14H2z',play:'M6 4l14 8-14 8z',pause:'M6 4h4v16H6zM14 4h4v16h-4z',prev:'M19 20 9 12l10-8zM5 4v16',next:'M5 4l10 8-10 8zM19 4v16',trash:'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6',set:'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',cam:'M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',folder:'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z',film:'M4 4h16v16H4zM4 9h16M4 15h16M9 4v16M15 4v16',plus:'M12 5v14M5 12h14',minus:'M5 12h14'};
 const ic=n=>'<svg class="i" viewBox="0 0 24 24"><path d="'+IC[n]+'"/></svg>';
 document.querySelectorAll('[data-i]').forEach(e=>{e.innerHTML=ic(e.dataset.i)+(e.dataset.l?'<span>'+e.dataset.l+'</span>':'')});
-let V={cams:{},sel:'',mute:{},sync:{}},VS={n_m:1,n_s:1,n_b:1,n_h:1,vib:1,ntf:1,casc:1,keep:300},mode='f',ww=0,wt=0,vsir=0,tv=0,at,live='',held=0,rc,rch,svT,fo='',tab='cams',pz=1,vq=[],pa=[],pi=0,pcur=0,ptm=0,urls=[],shCam='',tt;const TL={},FT={},LD={},SY={},PH='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240"><rect width="320" height="240" fill="#151922"/><text x="160" y="125" fill="#8b96a8" font-size="16" text-anchor="middle" font-family="sans-serif">Снимок недоступен</text></svg>');
+let V={cams:{},sel:'',mute:{},sync:{}},VS={n_p:1,n_m:1,n_s:1,n_b:1,n_h:1,vib:1,ntf:1,casc:1,keep:300},mode='f',ww=0,wt=0,vsir=0,tv=0,at,live='',held=0,rc,rch,svT,fo='',tab='cams',pz=1,vq=[],pa=[],pi=0,pcur=0,ptm=0,urls=[],shCam='',tt;const TL={},FT={},LD={},SY={},PH='data:image/svg+xml;utf8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240"><rect width="320" height="240" fill="#151922"/><text x="160" y="125" fill="#8b96a8" font-size="16" text-anchor="middle" font-family="sans-serif">Снимок недоступен</text></svg>');
 try{const o=JSON.parse(L.v||'{}');V.cams=o.cams||{};V.sel=o.sel||'';V.mute=o.mute||{};V.sync=o.sync||{};Object.assign(VS,JSON.parse(L.vs||'{}'))}catch{}
 const save=()=>{try{L.v=jh({cams:V.cams,sel:V.sel,mute:V.mute,sync:V.sync})}catch{}},C=()=>V.cams[V.sel]||{},P=o=>post(TS(),{...o,c:V.sel}).catch(()=>{}),nm=id=>(V.cams[id]||{}).n||'камера';
 const ST=t=>{$('ls').textContent=t;$('fss').textContent=t};
 function toast(t){const e=$('toast');e.textContent=t;e.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('on'),3500)}
 // --- архив снимков (хранится на телефоне просмотра) ---
-const dbv=new Promise(r=>{const q=indexedDB.open('wcv',1);q.onupgradeneeded=()=>q.result.createObjectStore('e',{keyPath:'id'});q.onsuccess=()=>r(q.result)});
-const av=async(m,f)=>{const d=await dbv;return new Promise(r=>{const q=f(d.transaction('e',m).objectStore('e'));q.onsuccess=()=>r(q.result)})};
-const KN={Motion:'Движение',Sound:'Звук',Battery:'Низкий заряд камеры',Heat:'Перегрев телефона'},NK={Motion:'n_m',Sound:'n_s',Battery:'n_b',Heat:'n_h'};
+const dbv=new Promise(r=>{const q=indexedDB.open('wcv',3);q.onupgradeneeded=()=>{const d=q.result;if(!d.objectStoreNames.contains('e'))d.createObjectStore('e',{keyPath:'id'});if(!d.objectStoreNames.contains('l'))d.createObjectStore('l',{keyPath:'id'});if(!d.objectStoreNames.contains('m'))d.createObjectStore('m',{keyPath:'id'})};q.onsuccess=()=>r(q.result)});
+const avs=async(st,m,f)=>{const d=await dbv;return new Promise(r=>{const q=f(d.transaction(st,m).objectStore(st));q.onsuccess=()=>r(q.result)})},av=(m,f)=>avs('e',m,f);
+const KN={Motion:'Движение',Sound:'Звук',Battery:'Низкий заряд камеры',Heat:'Перегрев телефона',Power:'Зарядка'},NK={Motion:'n_m',Sound:'n_s',Battery:'n_b',Heat:'n_h',Power:'n_p'};
 async function arcAdd(d,c,k){if(!(k=='Motion'||k=='Sound'))return;const tm=+((d.attachment&&d.attachment.name||'').match(/^[ms](\d+)\.jpg$/)||[])[1]||0,id=tm?c+'-'+tm:d.id,t=tm?Math.floor((tm+((V.cams[c]||{}).off||0))/1000):d.time,old=await av('readonly',s=>s.get(id));if(old&&old.b)return;let b=null;
  if(d.attachment)try{const q=await fetch(d.attachment.url);if(!q.ok)throw 0;b=new Blob([await q.arrayBuffer()],{type:'image/jpeg'})}catch{}
- if(!b&&old)return;await av('readwrite',s=>s.put({id,c,t,k,b}));const a=(await av('readonly',s=>s.getAll())).filter(e=>e.c==c).sort((x,y)=>y.t-x.t);for(const e of a.slice(VS.keep))await av('readwrite',s=>s.delete(e.id));if(tab=='arch')folders()}
+ if(!b&&old)return;await av('readwrite',s=>s.put({id,c,t,k,b}));const a=(await av('readonly',s=>s.getAll())).filter(e=>e.c==c).sort((x,y)=>y.t-x.t);for(const e of a.slice(VS.keep))await av('readwrite',s=>s.delete(e.id));if(tab=='arch')arcRefresh()}
 const sendSync=c=>post(TS(),{k:'sync',c,since:V.sync[c]||(Date.now()-864e5-((V.cams[c]||{}).off||0))}).catch(()=>{});
 async function arcIn(d,m){try{const u=new Uint8Array(await(await fetch(d.attachment.url)).arrayBuffer()),nl=u.indexOf(10),h=JSON.parse(new TextDecoder().decode(u.slice(0,nl))),off=(V.cams[m.c]||{}).off||0,all=await av('readonly',s=>s.getAll());let o=nl+1,last=V.sync[m.c]||0;
  for(const it of h.l){const b=new Blob([u.slice(o,o+it.n)],{type:'image/jpeg'}),k=it.k=='s'?'Sound':'Motion';o+=it.n;last=Math.max(last,it.t);
   const id=m.c+'-'+it.t,ex=all.find(e=>e.id==id);if(ex&&ex.b)continue;const e={id,c:m.c,t:Math.floor((it.t+off)/1000),k,b};await av('readwrite',s=>s.put(e));if(ex)ex.b=b;else all.push(e)}
- V.sync[m.c]=last;save();if(m.more)sendSync(m.c);if(tab=='arch')folders()}catch(e){toast('Синхронизация архива: '+e)}}
-function alertIn(d){const k=d.title||'Motion',c=d.message.split(' ').pop();arcAdd(d,c,k);
+ for(const e of h.g||[]){last=Math.max(last,e.t);await logAdd(m.c,KG[e.k],TX(e.k,e.x),e.t+off)}
+ for(const e of h.mt||[]){last=Math.max(last,e.t);await avs('m','readwrite',s=>s.put({id:m.c+'-'+e.t,c:m.c,t:e.t+off,b:e.b,tp:e.tp,ch:e.ch}))}
+ V.sync[m.c]=last;save();if(m.more)sendSync(m.c);if(tab=='arch')arcRefresh()}catch(e){toast('Синхронизация архива: '+e)}}
+function alertIn(d){const k=d.title||'Motion',c=d.message.split(' ').pop();arcAdd(d,c,k);logIn(d,c,k);
  if(d.time>Date.now()/1000-120&&VS[NK[k]]&&!V.mute[c]){const t=(KN[k]||k)+' · '+nm(c);toast(t);if(VS.vib)try{navigator.vibrate(300)}catch{}if(VS.ntf)try{new Notification(t)}catch{}}}
+// --- журнал событий ---
+const KG={m:'Motion',s:'Sound',b:'Battery',h:'Heat',p:'Power',start:'Start'},TX=(k,x)=>k=='b'?'Низкий заряд '+x:k=='h'?'Перегрев '+x+'°':k=='p'?(x=='on'?'Зарядка подключена':'Зарядка отключена'):k=='start'?'Камера запущена':KN[KG[k]];
+async function logAdd(c,k,x,tms,id){id=id||c+'-'+k+'-'+tms;const a=await avs('l','readonly',s=>s.getAll());if(a.some(e=>e.id==id||(e.c==c&&e.k==k&&e.x==x&&Math.abs(e.t-tms)<12e4)))return;
+ await avs('l','readwrite',s=>s.put({id,c,k,x,t:tms}));a.sort((p,q)=>q.t-p.t);for(const e of a.slice(999))await avs('l','readwrite',s=>s.delete(e.id));if(tab=='arch'&&am2=='l')logView()}
+function logIn(d,c,k){const m=d.message,n=x=>(m.match(x)||[])[1]||'';logAdd(c,k,k=='Battery'?'Низкий заряд '+n(/(\d+)%/)+'%':k=='Heat'?'Перегрев '+n(/([\d.]+)C/)+'°':k=='Power'?(/Power on/.test(m)?'Зарядка подключена':'Зарядка отключена'):KN[k]||k,d.time*1000,d.id)}
+const act=(c,x)=>logAdd(c,'Act',x,Date.now());
+let am2='p';const arcRefresh=()=>am2=='l'?logView():am2=='t'?tlOpt():folders();
+function arcMode(m){am2=m;$('folders').hidden=m!='p';$('logv').hidden=m!='l';$('tlv').hidden=m!='t';$('sg1').className=m=='p'?'':'g';$('sg2').className=m=='l'?'':'g';$('sg3').className=m=='t'?'':'g';arcRefresh()}
+async function logView(){const f=$('lf').value,G={a:['Motion','Sound'],p:['Battery','Heat','Power'],n:['Online','Offline','Start'],u:['Act']},el=$('logl'),a=(await avs('l','readonly',s=>s.getAll())).filter(e=>!f||G[f].includes(e.k)).sort((x,y)=>y.t-x.t).slice(0,300);el.innerHTML='';
+ a.forEach(e=>{const r=document.createElement('div'),d=document.createElement('div'),b=document.createElement('div');r.className='lr';d.className='lt '+e.k;b.innerHTML='<b></b><small></small>';b.firstChild.textContent=e.x;
+  b.lastChild.textContent=nm(e.c)+' · '+new Date(e.t).toLocaleString([],{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});r.append(d,b);el.append(r)});if(!a.length)el.innerHTML='<div class="c mt">Событий пока нет.</div>'}
+async function logClear(){if(!confirm('Очистить журнал событий?'))return;for(const e of await avs('l','readonly',s=>s.getAll()))await avs('l','readwrite',s=>s.delete(e.id));logView()}
+// --- графики заряда и температуры ---
+let grc='',grh=24;
+function openGr(id){grc=id;$('gr').hidden=0;$('grt').textContent='Графики: '+nm(id);grDraw();sendSync(id);setTimeout(grDraw,4000)}
+function grRange(h){grh=h;[...$('grr').children].forEach((b,i)=>b.className=[6,24,168][i]==h?'':'g');grDraw()}
+async function grDraw(){const now=Date.now(),a=(await avs('m','readonly',s=>s.getAll())).filter(e=>e.c==grc&&e.t>now-grh*36e5).sort((x,y)=>x.t-y.t);
+ line($('gb'),a.filter(e=>e.b!=null),'b',0,100,'#22c55e',a);line($('gt'),a.filter(e=>e.tp!=null),'tp',null,null,'#f59e0b');$('grs').textContent=a.length?'Точек: '+a.length+' (раз в 5 минут, пока камера включена)':'Данных пока нет: точки накапливаются, пока камера включена.'}
+function line(cv,p,k,lo,hi,col,all){const g=cv.getContext('2d'),W=cv.width,H=cv.height;g.clearRect(0,0,W,H);if(!p.length)return;const t1=Date.now(),t0=t1-grh*36e5;let mn=lo??Math.min(...p.map(e=>e[k]))-1,mx=hi??Math.max(...p.map(e=>e[k]))+1;if(mx-mn<4){mx+=2;mn-=2}
+ const X=t=>44+(t-t0)/(t1-t0)*(W-56),Y=v=>H-26-(v-mn)/(mx-mn)*(H-44);g.strokeStyle='#232a36';g.fillStyle='#8b96a8';g.font='20px sans-serif';g.lineWidth=1;
+ for(let i=0;i<=4;i++){const v=mn+(mx-mn)*i/4,y=Y(v);g.beginPath();g.moveTo(44,y);g.lineTo(W-8,y);g.stroke();g.fillText(Math.round(v),2,y+6)}
+ for(let i=0;i<=4;i++){const t=t0+(t1-t0)*i/4;g.fillText(new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),X(t)-24,H-4)}
+ if(all)all.forEach((e,i)=>{if(e.ch){const n=all[i+1],x=X(e.t);g.fillStyle='#22c55e30';g.fillRect(x,8,Math.max(3,(n?X(n.t):x+4)-x),H-34)}});
+ g.strokeStyle=col;g.lineWidth=3;g.beginPath();p.forEach((e,i)=>{const x=X(e.t),y=Y(e[k]);i?g.lineTo(x,y):g.moveTo(x,y)});g.stroke()}
+// --- таймлапс с камеры ---
+let tlA=[],tlt=0,tlI=0;
+function tlOpt(){const s=$('tlc'),v=s.value;s.innerHTML='';Object.keys(V.cams).forEach(id=>s.add(new Option(nm(id),id)));if(v)s.value=v}
+function tlLoad(){const c=$('tlc').value;if(!c)return;tlPlay(0);tlA.forEach(x=>URL.revokeObjectURL(x.u));tlA=[];$('tlp').hidden=1;const off=(V.cams[c]||{}).off||0,now=Date.now()-off;
+ post(TS(),{k:'tl',c,from:now-$('tlr').value*36e5,to:now+6e4,n:240}).then(()=>$('tls').textContent='Запрос отправлен камере, ждём кадры…').catch(()=>$('tls').textContent='Не удалось отправить запрос')}
+async function tlIn(d,m){if(m.none){$('tls').textContent='На камере нет кадров таймлапса за этот период. Включите таймлапс в настройках камеры.';return}if(!d.attachment)return;
+ try{const u=new Uint8Array(await(await fetch(d.attachment.url)).arrayBuffer()),nl=u.indexOf(10),h=JSON.parse(new TextDecoder().decode(u.slice(0,nl))),off=(V.cams[m.c]||{}).off||0;let o=nl+1;
+  for(const it of h.l){tlA.push({t:it.t+off,u:URL.createObjectURL(new Blob([u.slice(o,o+it.n)],{type:'image/jpeg'}))});o+=it.n}
+  tlA.sort((a,b)=>a.t-b.t);$('tls').textContent='Получено кадров: '+tlA.length+(m.more?' (загрузка продолжается…)':'');$('tlsl').max=tlA.length-1;$('tlp').hidden=0;if(!m.more){tlI=0;tlShow(0);tlPlay(1)}}catch(e){$('tls').textContent='Ошибка: '+e}}
+function tlShow(i){const f=tlA[i];if(!f)return;$('tli').src=f.u;$('tlsl').value=i;$('tlc2').textContent=(i+1)+' / '+tlA.length+' · '+new Date(f.t).toLocaleString([],{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
+function tlPlay(on){clearInterval(tlt);tlt=0;if(on&&tlA.length>1)tlt=setInterval(()=>{tlI=(tlI+1)%tlA.length;tlShow(tlI)},1000/+$('tlf').value);$('tlpp').innerHTML=ic(tlt?'pause':'play')}
+const tlSeek=i=>{tlPlay(0);tlI=i;tlShow(i)};
 // --- плитки камер ---
 function tile(id){if(TL[id])return TL[id];const el=document.createElement('div'),img=document.createElement('img'),cap=document.createElement('div');el.className='tile';cap.className='cap';el.append(img,cap);el.onclick=()=>openFs(id);$('grid').append(el);return TL[id]={el,img,cap}}
 function render(){const now=Date.now()/1000;
  Object.entries(V.cams).forEach(([id,x])=>{const t=tile(id),ok=now-x.t<(x.e||5)*60+90,src=x.d||x.u||'';if(src&&t.src!=src){t.img.src=src;t.src=src}
-  t.cap.innerHTML='<i class="dot '+(ok?'ok':'bad')+'"></i>';t.cap.append((x.n||id)+' · '+(x.t?new Date(x.t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—')+(x.b!=null?' · '+x.b+'%':'')+(x.tp!=null?' · '+x.tp+'°':''));
+  t.cap.innerHTML='<i class="dot '+(ok?'ok':'bad')+'"></i>';t.cap.append((x.n||id)+' · '+(x.t?new Date(x.t*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—')+(x.b!=null?' · '+(x.ch?'⚡':'')+x.b+'%':'')+(x.tp!=null?' · '+x.tp+'°':''));t.cap.classList.toggle('low',x.b!=null&&x.b<=15&&!x.ch);
+  if(x.on!==undefined&&x.on!=ok)logAdd(id,ok?'Online':'Offline',ok?'Камера в сети':'Камера пропала со связи',Date.now());x.on=ok;
   if(x.u&&!x.d&&!LD[id]&&!live){LD[id]=1;loadFrame(id)}});
+ const bs=$('bats');bs.innerHTML='';Object.entries(V.cams).forEach(([id,x])=>{if(x.b==null)return;const c=document.createElement('span');c.className='chip'+(x.b<=15&&!x.ch?' low':'');c.textContent=(x.n||id)+' · '+(x.ch?'⚡ ':'🔋 ')+x.b+'%'+(x.tp!=null?' · '+x.tp+'°':'');bs.append(c)});
  $('vs').textContent=!net?'нет связи':cl()?'пауза '+cl()+' с':'на связи';$('vs').className='chip '+(!net||cl()?'warn':'ok');if(fo)fsUpdate()}
 async function loadFrame(id){const x=V.cams[id];if(!x||!x.u)return;try{const b=new Blob([await(await fetch(x.u)).arrayBuffer()],{type:'image/jpeg'});
  x.d=await new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(b)});save();render()}catch{}}
 // --- полноэкранное окно камеры (зум и управление здесь, чтобы не нажимать случайно) ---
 function openFs(id){V.sel=id;fo=id;save();pz=C().zm||1;$('zv').textContent='×'+pz;$('zp').hidden=1;$('fs').hidden=0;mode='f';fsMode();fsUpdate();if(live)sendWatch();else watchOn()}
 function closeFs(){fo='';$('fs').hidden=1;mode='f';fsMode();sendWatch()}
-function fsUpdate(){const c=C();$('fst').textContent=(c.n||'')+(c.tp!=null?' · '+c.tp+'°':'')+(c.b!=null?' · '+c.b+'%':'');const s=c.d||c.u||'',im=$('fsi');if(s&&im.dataset.s!=s){im.src=s;im.dataset.s=s}}
+function fsUpdate(){const c=C();$('fst').textContent=(c.n||'')+(c.tp!=null?' · '+c.tp+'°':'')+(c.b!=null?' · '+(c.ch?'⚡':'')+c.b+'%':'');const s=c.d||c.u||'',im=$('fsi');if(s&&im.dataset.s!=s){im.src=s;im.dataset.s=s}}
 function fsMode(){const v=mode=='v';$('fsv').hidden=!v;$('fsi').hidden=v;$('bv').style.background=v?'#2563eb':'';if(!v){$('fsv').pause();vq=[]}else ST('Видео со звуком: задержка 8–10 с, подождите несколько секунд')}
 const vmode=()=>{mode=mode=='v'?'f':'v';fsMode();live?sendWatch():watchOn()};
 const zoomBy=d=>{pz=Math.min(4,Math.max(1,+(pz+d).toFixed(1)));$('zv').textContent='×'+pz;P({k:'zoom',v:pz})};
 function nextV(){const u=vq.shift();if(!u)return;const v=$('fsv');v.src=u;v.muted=false;v.play().catch(()=>{v.muted=true;v.play().catch(()=>{})})}
 // --- вкладки ---
-function setTab(t){tab=t;['cams','arch','set'].forEach(x=>{$('p-'+x).hidden=x!=t;$('t-'+x).classList.toggle('on',x==t)});if(t=='arch')folders();if(t=='set')camsSet()}
+function setTab(t){tab=t;['cams','arch','set'].forEach(x=>{$('p-'+x).hidden=x!=t;$('t-'+x).classList.toggle('on',x==t)});if(t=='arch')arcRefresh();if(t=='set')camsSet()}
 // --- архив: папки по камерам и слайдшоу ---
 async function folders(){urls.forEach(u=>URL.revokeObjectURL(u));urls=[];const el=$('folders'),all=await av('readonly',s=>s.getAll()),by={};all.forEach(e=>(by[e.c]=by[e.c]||[]).push(e));el.innerHTML='';
  Object.keys(by).forEach(id=>{const a=by[id].sort((x,y)=>y.t-x.t),f=document.createElement('div'),im=document.createElement('img'),cp=document.createElement('div'),cv=a.find(x=>x.b),u=cv?URL.createObjectURL(cv.b):PH;if(cv)urls.push(u);im.src=u;f.className='fold';cp.className='fc';
@@ -267,30 +334,31 @@ function plPlay(on){clearInterval(ptm);ptm=0;if(on&&pa.length>1)ptm=setInterval(
 const plStep=d=>{plPlay(0);pi=(pi+d+pa.length)%pa.length;plShow()};
 async function plDel(){const e=pa[pi];if(!e)return;await av('readwrite',s=>s.delete(e.id));pa.splice(pi,1);if(!pa.length)return closePl();pi%=pa.length;plShow()}
 function closePl(){plPlay(0);$('pl').hidden=1;folders()}
-const plClip=()=>{const e=pa[pi];if(e)post(TS(),{k:'clip',t:e.t*1000,c:e.c}).then(()=>toast('Клип запрошен, подождите…')).catch(()=>toast('Не удалось отправить запрос'))};
+const plClip=()=>{const e=pa[pi];if(e)post(TS(),{k:'clip',t:e.t*1000,c:e.c}).then(()=>{toast('Клип запрошен, подождите…');act(e.c,'Клип запрошен')}).catch(()=>toast('Не удалось отправить запрос'))};
 async function clearArc(id){if(!confirm('Удалить все снимки этой камеры из архива?'))return;for(const e of await av('readonly',s=>s.getAll()))if(e.c==id)await av('readwrite',s=>s.delete(e.id));toast('Архив очищен')}
 const cmClose=()=>{$('cmv').pause();$('cm').hidden=1};
 // --- настройки (приложение и камеры) ---
 const hrs=[...Array(24).keys()];
-const VSCH=[['sw','n_m','Оповещать о движении'],['sw','n_s','Оповещать о звуке'],['sw','n_b','Оповещать о низком заряде камеры'],['sw','n_h','Оповещать о перегреве камеры'],['sw','vib','Вибрация при оповещении'],['sw','ntf','Системные уведомления'],['sw','casc','Кадры всех камер при открытии'],['sel','keep','Хранить снимков на камеру',[50,100,300,1000]]];
-const CSCH=[['sw','am','Оповещения о движении'],['rg','sens','Чувствительность к движению',1,10],['rg','asens','Реакция на звук (0 — выключена)',0,10],['sel','cd','Пауза между оповещениями, с',[15,30,60,120,300,600]],['sw','rec','Запись клипов на телефоне камеры'],['sw','arc','Сохранять снимки тревог на камере'],['sel','ret','Хранить на камере, дней',[1,3,7,14,30]],['sel','cap','Лимит памяти под клипы и снимки, МБ',[100,300,1000,3000]],['sw','asr','Сирена при движении'],['sw','lowb','Оповещать о низком заряде'],['sel','lowt','Порог заряда, %',[10,15,20,30]],['sw','hot','Оповещать о перегреве'],['sel','hott','Порог температуры, °C',[38,40,42,45,48]],['sw','sch','Оповещать только по расписанию'],['sel','sf','Расписание: с часа',hrs],['sel','st','Расписание: до часа',hrs],['sel','every','Кадр «я на связи», мин (0 — выкл)',[0,15,30,60]],['tx','name','Название камеры']];
+const VSCH=[['sw','n_m','Оповещать о движении'],['sw','n_s','Оповещать о звуке'],['sw','n_b','Оповещать о низком заряде камеры'],['sw','n_h','Оповещать о перегреве камеры'],['sw','n_p','Оповещать о зарядке камеры'],['sw','vib','Вибрация при оповещении'],['sw','ntf','Системные уведомления'],['sw','casc','Кадры всех камер при открытии'],['sel','keep','Хранить снимков на камеру',[50,100,300,1000]]];
+const CSCH=[['sw','am','Оповещения о движении'],['rg','sens','Чувствительность к движению',1,10],['rg','asens','Реакция на звук (0 — выключена)',0,10],['sel','cd','Пауза между оповещениями, с',[15,30,60,120,300,600]],['sw','rec','Запись клипов на телефоне камеры'],['sel','night','Ночной режим (подсветка тёмного кадра)',[[0,'выключен'],[1,'автоматически'],[2,'всегда']]],['sel','ng','Сила подсветки',[[1.5,'слабая'],[2.5,'средняя'],[4,'сильная']]],['sw','tl','Таймлапс (кадры по расписанию)'],['sel','tli','Таймлапс: интервал',[[10,'10 с'],[30,'30 с'],[60,'1 мин'],[300,'5 мин'],[600,'10 мин'],[1800,'30 мин']]],['sel','tf','Таймлапс: с часа',hrs],['sel','tt','Таймлапс: до часа',[...hrs,24]],['sw','arc','Сохранять снимки тревог на камере'],['sel','ret','Хранить на камере, дней',[1,3,7,14,30]],['sel','cap','Лимит памяти под клипы и снимки, МБ',[100,300,1000,3000]],['sw','asr','Сирена при движении'],['sw','lowb','Оповещать о низком заряде'],['sel','lowt','Порог заряда, %',[10,15,20,30]],['sw','pw','Оповещать о подключении и отключении зарядки'],['sw','hot','Оповещать о перегреве'],['sel','hott','Порог температуры, °C',[38,40,42,45,48]],['sw','sch','Оповещать только по расписанию'],['sel','sf','Расписание: с часа',hrs],['sel','st','Расписание: до часа',hrs],['sel','every','Кадр «я на связи», мин (0 — выкл)',[0,15,30,60]],['tx','name','Название камеры']];
 function form(box,sch,val){box.innerHTML='';sch.forEach(([t,k,l,a,b])=>{const w=document.createElement('label'),sp=document.createElement('span');w.className='fr';sp.textContent=l;let i;
  if(t=='sw'){i=document.createElement('input');i.type='checkbox';i.checked=!!val[k]}else if(t=='rg'){i=document.createElement('input');i.type='range';i.min=a;i.max=b;i.value=val[k]??a}
- else if(t=='sel'){i=document.createElement('select');a.forEach(o=>i.add(new Option(o,o)));if(val[k]!=null)i.value=val[k]}else{i=document.createElement('input');i.value=val[k]||''}
+ else if(t=='sel'){i=document.createElement('select');a.forEach(o=>i.add(Array.isArray(o)?new Option(o[1],o[0]):new Option(o,o)));if(val[k]!=null)i.value=val[k]}else{i=document.createElement('input');i.value=val[k]||''}
  i.dataset.k=k;i.dataset.t=t;w.append(sp,i);box.append(w)})}
 const read=(box,val)=>box.querySelectorAll('[data-k]').forEach(i=>{const t=i.dataset.t;val[i.dataset.k]=t=='sw'?+i.checked:t=='tx'?i.value:+i.value});
 function camsSet(){const el=$('camset');el.innerHTML='';const ids=Object.keys(V.cams);if(!ids.length){el.innerHTML='<div class="c mt">Камеры появятся здесь, когда пришлют первый кадр.</div>';return}
  ids.forEach(id=>{const c=document.createElement('div'),b=document.createElement('b'),m=document.createElement('label'),g=document.createElement('button'),z=document.createElement('button');c.className='c';b.textContent=nm(id);m.className='fr';m.innerHTML='<span>Не оповещать с этой камеры</span><input type="checkbox">';
-  m.lastChild.checked=!!V.mute[id];m.lastChild.onchange=e=>{V.mute[id]=+e.target.checked;save()};g.className='g';g.textContent='Настроить камеру';g.onclick=()=>openSh(id);z.className='g';z.textContent='Очистить архив камеры';z.onclick=()=>clearArc(id);c.append(b,m,g,z);el.append(c)})}
+  m.lastChild.checked=!!V.mute[id];m.lastChild.onchange=e=>{V.mute[id]=+e.target.checked;save()};g.className='g';g.textContent='Настроить камеру';g.onclick=()=>openSh(id);z.className='g';z.textContent='Очистить архив камеры';z.onclick=()=>clearArc(id);const gb=document.createElement('button');gb.className='g';gb.textContent='Графики заряда и температуры';gb.onclick=()=>openGr(id);c.append(b,m,g,gb,z);el.append(c)})}
 function openSh(id){shCam=id;V.sel=id;$('sh').hidden=0;$('sht').textContent='Настройки: '+nm(id);$('shs').textContent='Запрашиваю настройки у камеры…';form($('shf'),CSCH,{});post(TS(),{k:'getcfg',c:id}).catch(()=>{$('shs').textContent='Нет связи с сервером'})}
-function saveSh(){const v={};read($('shf'),v);post(TS(),{k:'cfg',c:shCam,v}).then(()=>{toast('Настройки отправлены на камеру');$('sh').hidden=1}).catch(()=>toast('Не удалось отправить, повторите'))}
+function saveSh(){const v={};read($('shf'),v);post(TS(),{k:'cfg',c:shCam,v}).then(()=>{toast('Настройки отправлены на камеру');act(shCam,'Настройки отправлены на камеру');$('sh').hidden=1}).catch(()=>toast('Не удалось отправить, повторите'))}
 // --- сообщения от камер ---
 function onMsg(d){if(!d.topic.endsWith('-s'))return alertIn(d);let m;try{m=JSON.parse(d.message)}catch{return}
  if(m.k=='frame'&&d.attachment){const x=V.cams[m.c]||(V.cams[m.c]={});if(!V.sel)V.sel=m.c;if(d.time<=(x.t||0))return;
-  Object.assign(x,{t:d.time,u:d.attachment.url,n:m.n,b:m.b,tp:m.tp,e:m.e,f:m.f,zm:m.zm,off:m.ts?d.time*1000-m.ts:x.off});if(!SY[m.c]||Date.now()-SY[m.c]>6e5){SY[m.c]=Date.now();sendSync(m.c)}if(live)x.d=0;else{clearTimeout(FT[m.c]);FT[m.c]=setTimeout(()=>loadFrame(m.c),400)}clearTimeout(svT);svT=setTimeout(save,3000);render()}
+  Object.assign(x,{t:d.time,u:d.attachment.url,n:m.n,b:m.b,tp:m.tp,e:m.e,f:m.f,zm:m.zm,ch:m.ch,off:m.ts?d.time*1000-m.ts:x.off});if(!SY[m.c]||Date.now()-SY[m.c]>6e5){SY[m.c]=Date.now();sendSync(m.c)}if(live)x.d=0;else{clearTimeout(FT[m.c]);FT[m.c]=setTimeout(()=>loadFrame(m.c),400)}clearTimeout(svT);svT=setTimeout(save,3000);render()}
  if(m.k=='chunk'&&d.attachment&&mode=='v'&&fo==m.c&&d.time>Date.now()/1000-30){vq.push(d.attachment.url);vq=vq.slice(-2);const v=$('fsv');if(v.paused||v.ended)nextV()}
+ if(m.k=='tlb')tlIn(d,m);
  if(m.k=='arch'&&d.attachment)arcIn(d,m);
- if(m.k=='clipdata'&&d.attachment){$('cmv').src=d.attachment.url;$('cm').hidden=0;$('cmv').play().catch(()=>{})}
+ if(m.k=='clipdata'&&d.attachment){act(m.c,'Клип получен');$('cmv').src=d.attachment.url;$('cm').hidden=0;$('cmv').play().catch(()=>{})}
  if(m.k=='noclip')toast('Клип не найден на камере (устарел или удалён)');
  if(m.k=='res'&&m.c==V.sel)ST(m.msg);
  if(m.k=='cfgdata'&&m.c==shCam&&!$('sh').hidden){form($('shf'),CSCH,m.v);$('shs').textContent='Камера на связи. Изменения применяются после «Сохранить».'}}
@@ -302,12 +370,13 @@ function liveStop(){if(!live)return;live='';clearInterval(wt);wt=0;clearTimeout(
 async function talk(on){held=on;if(!on){rc&&rc.state=='recording'&&rc.stop();return}
  try{const ms=await navigator.mediaDevices.getUserMedia({audio:true});if(!held){ms.getTracks().forEach(t=>t.stop());return}
   rch=[];rc=new MediaRecorder(ms);rc.ondataavailable=e=>rch.push(e.data);
-  rc.onstop=()=>{ms.getTracks().forEach(t=>t.stop());const b=new Blob(rch,{type:rc.mimeType});if(b.size>800)put(TS(),b,{Filename:'v.webm',Priority:'1','X-Message':jh({k:'say',c:V.sel})}).then(()=>ST('Сообщение отправлено')).catch(e=>ST('Не ушло: '+e))};
+  rc.onstop=()=>{ms.getTracks().forEach(t=>t.stop());const b=new Blob(rch,{type:rc.mimeType});if(b.size>800)put(TS(),b,{Filename:'v.webm',Priority:'1','X-Message':jh({k:'say',c:V.sel})}).then(()=>{ST('Сообщение отправлено');act(V.sel,'Голосовое сообщение отправлено')}).catch(e=>ST('Не ушло: '+e))};
   rc.start();ST('Говорите…')}catch(e){ST('Микрофон: '+(e.name||e)+' — разрешите в настройках Android')}}
 function startView(){$('view').hidden=0;try{Notification.requestPermission()}catch{}
  form($('vsf'),VSCH,VS);$('vsf').onchange=()=>{read($('vsf'),VS);L.vs=jh(VS)};
  const b=$('ptt');b.onpointerdown=()=>talk(1);b.onpointerup=b.onpointerleave=b.onpointercancel=()=>talk(0);$('fsv').onended=$('fsv').onerror=nextV;
  render();setInterval(render,15000);document.addEventListener('visibilitychange',()=>document.hidden?liveStop():(VS.casc||fo)&&watchOn());
  listen(cfg.code+','+cfg.code+'-s',onMsg,'12h',v=>{net=v;render()});if(VS.casc)setTimeout(watchOn,2500)}
+if(NP()){$('bgbox').hidden=0;$('bgm').checked=L.bgm=='1';$('bt').checked=L.bt=='1';$('bgm').onchange=e=>L.bgm=e.target.checked?'1':'0';$('bt').onchange=e=>L.bt=e.target.checked?'1':'0'}
 if(L.role)go(L.role);
 </script></body></html>
