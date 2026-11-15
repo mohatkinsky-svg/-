@@ -13,16 +13,24 @@ jobs:
       - run: npx cap add android
       - name: Permissions
         run: |
-          sed -i 's|<application|<uses-permission android:name="android.permission.CAMERA" />\\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\\n    <application|' android/app/src/main/AndroidManifest.xml
-      - name: Battery temperature plugin
+          sed -i 's|<application|<uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <application|' android/app/src/main/AndroidManifest.xml
+      - name: Native plugin and background service
         run: |
           D=android/app/src/main/java/com/watchcam/app
+          M=android/app/src/main/AndroidManifest.xml
           cp $D/MainActivity.java /tmp/MainActivity.orig
+          cp $M /tmp/Manifest.orig
           cat > $D/BatteryTempPlugin.java <<'EOF'
           package com.watchcam.app;
+          import android.content.Context;
           import android.content.Intent;
           import android.content.IntentFilter;
+          import android.content.pm.PackageManager;
+          import android.net.Uri;
           import android.os.BatteryManager;
+          import android.os.Build;
+          import android.provider.Settings;
+          import android.view.WindowManager;
           import com.getcapacitor.JSObject;
           import com.getcapacitor.Plugin;
           import com.getcapacitor.PluginCall;
@@ -42,6 +50,126 @@ jobs:
               }
               call.resolve(r);
             }
+            @PluginMethod
+            public void startBg(PluginCall call) {
+              Context c = getContext();
+              if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+                getActivity().requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 77);
+              }
+              Intent i = new Intent(c, WatchService.class);
+              if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(i); else c.startService(i);
+              call.resolve();
+            }
+            @PluginMethod
+            public void stopBg(PluginCall call) {
+              getContext().stopService(new Intent(getContext(), WatchService.class));
+              call.resolve();
+            }
+            @PluginMethod
+            public void awake(final PluginCall call) {
+              final boolean on = call.getBoolean("on", true);
+              getActivity().runOnUiThread(new Runnable() {
+                public void run() {
+                  if (on) getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                  else getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                  call.resolve();
+                }
+              });
+            }
+            @PluginMethod
+            public void dim(final PluginCall call) {
+              final float v = call.getFloat("v", -1f);
+              getActivity().runOnUiThread(new Runnable() {
+                public void run() {
+                  WindowManager.LayoutParams lp = getActivity().getWindow().getAttributes();
+                  lp.screenBrightness = v;
+                  getActivity().getWindow().setAttributes(lp);
+                  call.resolve();
+                }
+              });
+            }
+            @PluginMethod
+            public void ignoreBatt(PluginCall call) {
+              Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getContext().getPackageName()));
+              i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+              getContext().startActivity(i);
+              call.resolve();
+            }
+            @PluginMethod
+            public void setBoot(PluginCall call) {
+              getContext().getSharedPreferences("watchcam", 0).edit().putBoolean("boot", call.getBoolean("on", false)).apply();
+              call.resolve();
+            }
+          }
+          EOF
+          cat > $D/WatchService.java <<'EOF'
+          package com.watchcam.app;
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.app.Service;
+          import android.content.Intent;
+          import android.content.pm.ServiceInfo;
+          import android.os.Build;
+          import android.os.IBinder;
+          import android.os.PowerManager;
+          public class WatchService extends Service {
+            private PowerManager.WakeLock wl;
+            @Override
+            public IBinder onBind(Intent i) { return null; }
+            @Override
+            public int onStartCommand(Intent i, int flags, int id) {
+              String ch = "watchcam";
+              if (Build.VERSION.SDK_INT >= 26) {
+                NotificationChannel c = new NotificationChannel(ch, "WatchCam", NotificationManager.IMPORTANCE_LOW);
+                ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(c);
+              }
+              Intent open = new Intent(this, MainActivity.class);
+              open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+              PendingIntent pi = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_IMMUTABLE);
+              Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, ch) : new Notification.Builder(this);
+              Notification n = b.setContentTitle("WatchCam работает").setContentText("Камера ведёт наблюдение").setSmallIcon(android.R.drawable.ic_menu_camera).setContentIntent(pi).setOngoing(true).build();
+              if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA | ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
+              else startForeground(1, n);
+              if (wl == null) {
+                PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+                wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "watchcam:svc");
+                wl.acquire();
+              }
+              return START_STICKY;
+            }
+            @Override
+            public void onDestroy() {
+              if (wl != null && wl.isHeld()) wl.release();
+              super.onDestroy();
+            }
+          }
+          EOF
+          cat > $D/BootReceiver.java <<'EOF'
+          package com.watchcam.app;
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.os.Build;
+          public class BootReceiver extends BroadcastReceiver {
+            @Override
+            public void onReceive(Context c, Intent in) {
+              if (!Intent.ACTION_BOOT_COMPLETED.equals(in.getAction())) return;
+              if (!c.getSharedPreferences("watchcam", 0).getBoolean("boot", false)) return;
+              NotificationManager nm = (NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+              String ch = "watchcam_boot";
+              if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(new NotificationChannel(ch, "Напоминание", NotificationManager.IMPORTANCE_HIGH));
+              Intent open = new Intent(c, MainActivity.class);
+              open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+              PendingIntent pi = PendingIntent.getActivity(c, 1, open, PendingIntent.FLAG_IMMUTABLE);
+              Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(c, ch) : new Notification.Builder(c);
+              nm.notify(2, b.setContentTitle("WatchCam").setContentText("Телефон перезагружен. Нажмите, чтобы запустить камеру").setSmallIcon(android.R.drawable.ic_menu_camera).setContentIntent(pi).setAutoCancel(true).build());
+            }
           }
           EOF
           cat > $D/MainActivity.java <<'EOF'
@@ -56,11 +184,13 @@ jobs:
             }
           }
           EOF
+          sed -i 's#<application#<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />\n    <uses-permission android:name="android.permission.WAKE_LOCK" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />\n    <application#' $M
+          sed -i 's#</application>#<service android:name=".WatchService" android:exported="false" android:foregroundServiceType="camera|microphone" />\n    <receiver android:name=".BootReceiver" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver>\n  </application>#' $M
       - run: npx cap sync android
-      - name: Build (if plugin fails, rebuild without it)
+      - name: Build (if native code fails, rebuild without it)
         run: |
           cd android && chmod +x gradlew
-          ./gradlew assembleDebug || { D=app/src/main/java/com/watchcam/app; rm $D/BatteryTempPlugin.java; cp /tmp/MainActivity.orig $D/MainActivity.java; ./gradlew assembleDebug; }
+          ./gradlew assembleDebug || { D=app/src/main/java/com/watchcam/app; rm -f $D/BatteryTempPlugin.java $D/WatchService.java $D/BootReceiver.java; cp /tmp/MainActivity.orig $D/MainActivity.java; cp /tmp/Manifest.orig app/src/main/AndroidManifest.xml; ./gradlew assembleDebug; }
       - uses: actions/upload-artifact@v4
         with:
           name: watchcam-apk
