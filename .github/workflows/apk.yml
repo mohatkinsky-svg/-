@@ -45,6 +45,9 @@ jobs:
               if (i != null) {
                 r.put("temp", i.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) / 10.0);
                 r.put("level", i.getIntExtra(BatteryManager.EXTRA_LEVEL, -1));
+                r.put("voltage", i.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1));
+                BatteryManager bm = (BatteryManager) getContext().getSystemService(Context.BATTERY_SERVICE);
+                if (bm != null) r.put("current", bm.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW));
                 int st = i.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
                 r.put("charging", st == BatteryManager.BATTERY_STATUS_CHARGING || st == BatteryManager.BATTERY_STATUS_FULL);
               }
